@@ -1,0 +1,21 @@
+.kiosk { min-height: 100%; background: radial-gradient(1200px 600px at 20% -10%, #1d2a3a 0%, #0d1117 60%); color: #eef2f7; display: flex; flex-direction: column; padding: 1.5rem 2rem; gap: 1rem; --surface: #161b22; --border: #2b3340; --text: #eef2f7; --text-2: #c2cad6; --text-3: #8b96a5; }
+.kiosk .k-top { display: flex; align-items: center; gap: 1rem; }
+.kiosk .k-clock { font-size: clamp(3rem, 9vw, 6.5rem); font-weight: 750; letter-spacing: -.03em; font-variant-numeric: tabular-nums; line-height: 1; }
+.kiosk .k-date { font-size: 1.3rem; color: var(--text-2); }
+.kiosk .k-center { flex: 1; display: grid; place-items: center; text-align: center; }
+.kiosk .k-prompt { font-size: 1.6rem; font-weight: 600; }
+.kiosk .k-finger { width: 150px; height: 150px; border-radius: 50%; display: grid; place-items: center; font-size: 4.5rem; margin: 1.2rem auto; border: 3px solid #3987e5; box-shadow: 0 0 0 0 rgba(57,135,229,.6); animation: pulse 2s infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(57,135,229,.5); } 70% { box-shadow: 0 0 0 26px rgba(57,135,229,0); } 100% { box-shadow: 0 0 0 0 rgba(57,135,229,0); } }
+.kiosk .k-result { background: #161b22; border: 1px solid #2b3340; border-radius: 18px; padding: 1.5rem 2rem; width: min(760px, 100%); text-align: left; }
+.kiosk .k-result .type { font-size: 3rem; font-weight: 800; }
+.kiosk .k-result .type.in { color: #3fc23f; }
+.kiosk .k-result .type.out { color: #6da7ec; }
+.kiosk .k-result .who { font-size: 1.8rem; font-weight: 700; }
+.kiosk .k-bottom { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; }
+.kiosk .btn { background: #1f2630; border-color: #2b3340; color: #eef2f7; padding: .8rem 1.2rem; font-size: 1.05rem; }
+.kiosk .btn.primary { background: #2a78d6; border-color: #2a78d6; }
+.kiosk .k-error { color: #ff8a8a; font-size: 1.3rem; font-weight: 600; }
+.kiosk .sim { display: flex; gap: .4rem; flex-wrap: wrap; justify-content: center; margin-top: 1rem; }
+.kiosk .sim .btn { padding: .4rem .7rem; font-size: .85rem; }
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; margin-top: .5rem; }
+.keypad button { font-size: 1.5rem; padding: .9rem; }
