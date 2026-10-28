@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { DEMO } from './api';
 import { isStaff, useAuth } from './auth';
 
 export default function Login() {
@@ -30,6 +31,15 @@ export default function Login() {
         {error && <div className="error">{error}</div>}
         <button className="btn primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
         <div className="muted small">Time-clock tablet? Open the <Link to="/kiosk">kiosk</Link>.</div>
+        {DEMO && (
+          <div className="demo-hint">
+            <b>Demo accounts</b>
+            <button type="button" className="btn sm" onClick={() => { setEmail('admin@demo.ph'); setPassword('Admin123!'); }}>Owner / admin — admin@demo.ph</button>
+            <button type="button" className="btn sm" onClick={() => { setEmail('manager@demo.ph'); setPassword('Manager123!'); }}>Manager — manager@demo.ph</button>
+            <button type="button" className="btn sm" onClick={() => { setEmail('juan@demo.ph'); setPassword('Employee123!'); }}>Employee — juan@demo.ph</button>
+            <span className="muted small">Kiosk PIN for every demo employee: 1234</span>
+          </div>
+        )}
       </form>
     </div>
   );

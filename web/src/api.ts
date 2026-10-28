@@ -13,11 +13,27 @@ export const session = {
   setDeviceToken: (t: string | null) => store.set(DEVICE_KEY, t),
 };
 
+/** Set by the app shell to send the user back to the login screen. */
+let onUnauthorized: (() => void) | undefined;
+export const setUnauthorizedHandler = (fn: () => void) => { onUnauthorized = fn; };
+
 export class ApiError extends Error {
   constructor(public status: number, message: string, public details?: unknown) { super(message); }
 }
 
+export const DEMO = import.meta.env.VITE_DEMO === '1';
+
 async function request<T>(method: string, path: string, body?: unknown, opts: { device?: boolean } = {}): Promise<T> {
+  if (DEMO) {
+    // Artifact demo: the API runs in the browser (see demo/backend.ts).
+    const { demoRequest } = await import('./demo/backend');
+    try {
+      return await demoRequest(method, path, body, opts.device ? null : session.token(), opts.device ? session.deviceToken() : null) as T;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401 && !opts.device && path !== '/api/auth/login') { session.setToken(null); onUnauthorized?.(); }
+      throw e;
+    }
+  }
   const headers: Record<string, string> = {};
   if (body !== undefined) headers['content-type'] = 'application/json';
   const token = opts.device ? null : session.token();
@@ -28,7 +44,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts: { 
   if (!res.ok) {
     if (res.status === 401 && !opts.device && path !== '/api/auth/login') {
       session.setToken(null);
-      if (!location.pathname.startsWith('/login')) location.href = '/login';
+      onUnauthorized?.();
     }
     const fieldErrors = (data?.details as { fieldErrors?: Record<string, string[]> } | undefined)?.fieldErrors;
     const detail = fieldErrors ? Object.entries(fieldErrors).map(([k, v]) => `${k}: ${v.join(', ')}`).join('; ') : '';

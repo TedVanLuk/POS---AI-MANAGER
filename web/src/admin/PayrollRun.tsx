@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { api, fmtDateTime, hm, peso } from '../api';
 import { isAdmin, useAuth } from '../auth';
 import { useApi } from '../hooks';
-import { ReasonDialog } from '../components/Modal';
+import { ConfirmDialog, ReasonDialog } from '../components/Modal';
 import { STATUS_BADGE } from './PayrollRuns';
 
 interface Line { id: string; code: string; label: string; category: 'earning' | 'deduction' | 'employer' | 'info'; quantity: number | null; rate: number | null; amount: number; taxable: boolean; enabled: boolean; isManual: boolean; editorName: string | null; editReason: string | null; updatedAt: string | null }
@@ -21,6 +21,7 @@ export default function PayrollRun() {
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<'payslips' | 'history'>('payslips');
   const [action, setAction] = useState<null | 'reopen' | 'void'>(null);
+  const [approving, setApproving] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const r = run.data;
@@ -39,11 +40,10 @@ export default function PayrollRun() {
         <span className={`badge ${STATUS_BADGE[r.status]}`}>{r.status}</span>
         <div className="spacer" />
         {editable && <button className="btn" disabled={busy} onClick={() => act(() => api.post(`/api/payroll/runs/${r.id}/compute`))}>↻ Recompute from attendance</button>}
-        {isAdmin(me?.role) && r.status === 'review' && <button className="btn primary" disabled={busy} onClick={() => confirm('Approve this payroll? It will be locked and payslips become visible to employees.') && act(() => api.post(`/api/payroll/runs/${r.id}/approve`))}>✓ Approve</button>}
+        {isAdmin(me?.role) && r.status === 'review' && <button className="btn primary" disabled={busy} onClick={() => setApproving(true)}>✓ Approve</button>}
         {isAdmin(me?.role) && r.status === 'approved' && <button className="btn primary" disabled={busy} onClick={() => act(() => api.post(`/api/payroll/runs/${r.id}/mark_paid`))}>Mark as paid</button>}
         {isAdmin(me?.role) && ['approved', 'review'].includes(r.status) && <button className="btn" onClick={() => setAction('reopen')}>Reopen</button>}
         {isAdmin(me?.role) && ['draft', 'review', 'approved'].includes(r.status) && <button className="btn danger" onClick={() => setAction('void')}>Void</button>}
-        <button className="btn" onClick={() => window.print()}>Print</button>
       </div>
       {error && <div className="error" style={{ marginBottom: '.75rem' }}>{error}</div>}
       <div className="grid cols-4">
@@ -102,6 +102,10 @@ export default function PayrollRun() {
         </div>
       )}
 
+      {approving && (
+        <ConfirmDialog title="Approve payroll" confirmLabel="Approve & lock" message="The run will be locked and payslips become visible to employees. You can reopen it later with a reason."
+          onClose={() => setApproving(false)} onConfirm={async () => { await api.post(`/api/payroll/runs/${r.id}/approve`); await reload(); }} />
+      )}
       {action && (
         <ReasonDialog title={action === 'reopen' ? 'Reopen payroll run' : 'Void payroll run'} confirmLabel={action === 'reopen' ? 'Reopen' : 'Void run'}
           description={action === 'reopen' ? 'The run goes back to draft so lines can be edited again.' : 'The run is cancelled permanently; its penalties become available for the next run.'}
@@ -124,7 +128,8 @@ function describe(a: Audit, r: Run) {
   if (a.action === 'add_manual') return `${emp ?? ''} · added ${af.category} “${af.label}” ${peso(af.amount as number)}`;
   if (a.action === 'remove_manual') return `${emp ?? ''} · removed “${b.label}” ${peso(b.amount as number)}`;
   if (a.action === 'reset') return `${emp ?? ''} · ${b.code} restored to computed value`;
-  if ('status' in af) return `${b.status} → ${af.status}`;
+  if (a.action === 'create') return `created run ${af.periodStart ?? ''} → ${af.periodEnd ?? ''}`;
+  if ('status' in af && 'status' in b) return `${b.status} → ${af.status}`;
   if (a.action === 'compute') return `computed ${af.employees ?? ''} payslips`;
   return '';
 }

@@ -4,7 +4,7 @@ import { api, daysAgoIso, fmtDateTime, fmtTime, hm, todayIso } from '../api';
 import { isAdmin, useAuth } from '../auth';
 import { useApi } from '../hooks';
 import { FighterCard, type CardData } from '../components/FighterCard';
-import { Modal, ReasonDialog } from '../components/Modal';
+import { ConfirmDialog, Modal, ReasonDialog } from '../components/Modal';
 import { getDriver } from '../kiosk/drivers';
 import { EmployeeForm, type EmployeeInput } from './EmployeeForm';
 import type { DayRec } from './Attendance';
@@ -24,6 +24,7 @@ export default function EmployeeDetail() {
   const emp = useApi<Employee>(`/api/employees/${id}`);
   const card = useApi<CardData[]>(`/api/stats/cards?employeeId=${id}`);
   const [tab, setTab] = useState<'overview' | 'attendance' | 'notes' | 'biometrics' | 'edit'>('overview');
+  const [pendingEdit, setPendingEdit] = useState<Record<string, unknown> | null>(null);
   const e = emp.data;
   if (emp.error) return <div className="error">{emp.error}</div>;
   if (!e) return <div className="muted">Loading…</div>;
@@ -54,14 +55,22 @@ export default function EmployeeDetail() {
       {tab === 'edit' && (
         <div className="card">
           <EmployeeForm initial={e} submitLabel="Save changes" onSubmit={async (f) => {
-            let reason: string | undefined;
-            if (f.rate !== e.rate) reason = prompt('Reason for the pay-rate change (saved in the audit log):') ?? undefined;
             const { id: _id, fingerprints: _f, hasPin: _h, biometricConsentAt: _b, loginEmail: _l, ...rest } = f as Employee;
-            await api.patch(`/api/employees/${e.id}`, { ...rest, reason });
+            // A pay-rate change needs a reason for the audit log.
+            if (f.rate !== e.rate) { setPendingEdit(rest as unknown as Record<string, unknown>); return; }
+            await api.patch(`/api/employees/${e.id}`, rest);
             await emp.reload();
             setTab('overview');
           }} />
         </div>
+      )}
+      {pendingEdit && (
+        <ReasonDialog title="Change pay rate" description={`New rate: ₱${Number(pendingEdit.rate).toLocaleString('en-PH')} (was ₱${e.rate.toLocaleString('en-PH')})`}
+          onClose={() => setPendingEdit(null)} onConfirm={async (reason) => {
+            await api.patch(`/api/employees/${e.id}`, { ...pendingEdit, reason });
+            await emp.reload();
+            setTab('overview');
+          }} />
       )}
     </>
   );
@@ -198,6 +207,8 @@ function BiometricsTab({ e, reload }: { e: Employee; reload: () => Promise<void>
   const [finger, setFinger] = useState('R_INDEX');
   const [busy, setBusy] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [loginOpen, setLoginOpen] = useState(false);
   const [pin, setPin] = useState('');
   const [login, setLogin] = useState({ email: e.loginEmail ?? '', password: '' });
@@ -241,7 +252,7 @@ function BiometricsTab({ e, reload }: { e: Employee; reload: () => Promise<void>
               {['R_INDEX', 'L_INDEX', 'R_THUMB', 'L_THUMB', 'R_MIDDLE', 'L_MIDDLE'].map((x) => <option key={x}>{x}</option>)}
             </select>
             <button className="btn primary" disabled={busy} onClick={enroll}>Enroll on this device</button>
-            {e.fingerprints.length > 0 && <button className="btn danger" onClick={async () => { if (confirm('Delete all fingerprint templates for this employee?')) { await api.del(`/api/employees/${e.id}/fingerprints`); await reload(); } }}>Delete all</button>}
+            {e.fingerprints.length > 0 && <button className="btn danger" onClick={() => setDeleting(true)}>Delete all</button>}
           </div>
         )}
         <div className="muted small" style={{ marginTop: '.5rem' }}>Reader driver on this browser: <b>{driver.label}</b> (change it on the kiosk screen). Tip: enroll two fingers.</div>
@@ -254,15 +265,17 @@ function BiometricsTab({ e, reload }: { e: Employee; reload: () => Promise<void>
         <p style={{ marginTop: '1rem' }}>Employee portal login: {e.loginEmail ? <b>{e.loginEmail}</b> : <span className="badge">None</span>}</p>
         {admin && <button className="btn" onClick={() => setLoginOpen(true)}>{e.loginEmail ? 'Change login' : 'Create login'}</button>}
       </div>
+      {deleting && <ConfirmDialog title="Delete fingerprints" danger confirmLabel="Delete all" message="All fingerprint templates for this employee will be deleted. They must be enrolled again to use the kiosk." onClose={() => setDeleting(false)} onConfirm={async () => { await api.del(`/api/employees/${e.id}/fingerprints`); await reload(); }} />}
       {pinOpen && (
         <Modal title="Set kiosk PIN" onClose={() => setPinOpen(false)} actions={<><button className="btn" onClick={() => setPinOpen(false)}>Cancel</button><button className="btn primary" onClick={async () => { await api.post(`/api/employees/${e.id}/pin`, { pin }); setPinOpen(false); await reload(); }}>Save</button></>}>
           <label className="field">4–6 digit PIN<input inputMode="numeric" value={pin} onChange={(ev) => setPin(ev.target.value.replace(/\D/g, '').slice(0, 6))} /></label>
         </Modal>
       )}
       {loginOpen && (
-        <Modal title="Employee portal login" onClose={() => setLoginOpen(false)} actions={<><button className="btn" onClick={() => setLoginOpen(false)}>Cancel</button><button className="btn primary" onClick={async () => { try { await api.post(`/api/employees/${e.id}/login`, login); setLoginOpen(false); await reload(); } catch (err) { alert((err as Error).message); } }}>Save</button></>}>
+        <Modal title="Employee portal login" onClose={() => setLoginOpen(false)} actions={<><button className="btn" onClick={() => setLoginOpen(false)}>Cancel</button><button className="btn primary" onClick={async () => { try { await api.post(`/api/employees/${e.id}/login`, login); setLoginOpen(false); await reload(); } catch (err) { setLoginError((err as Error).message); } }}>Save</button></>}>
           <label className="field">Email<input type="email" value={login.email} onChange={(ev) => setLogin({ ...login, email: ev.target.value })} /></label>
           <label className="field" style={{ marginTop: '.5rem' }}>Password (min 8)<input type="password" value={login.password} onChange={(ev) => setLogin({ ...login, password: ev.target.value })} /></label>
+          {loginError && <div className="error">{loginError}</div>}
         </Modal>
       )}
     </div>

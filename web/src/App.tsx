@@ -1,4 +1,6 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { setUnauthorizedHandler } from './api';
 import { isStaff, useAuth } from './auth';
 import Login from './Login';
 import AdminLayout from './admin/Layout';
@@ -32,6 +34,8 @@ function RequireStaff({ children }: { children: JSX.Element }) {
 }
 
 export default function App() {
+  const nav = useNavigate();
+  useEffect(() => { setUnauthorizedHandler(() => nav('/login')); }, [nav]);
   return (
     <Routes>
       <Route path="/" element={<Home />} />

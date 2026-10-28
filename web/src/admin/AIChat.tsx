@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { api } from '../api';
+import { api, DEMO } from '../api';
 import { useApi } from '../hooks';
 
 interface Turn { role: 'user' | 'assistant'; content: string }
@@ -18,7 +18,7 @@ export default function AIChat() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => end.current?.scrollIntoView({ behavior: 'smooth' }), [turns, busy]);
+  useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth' }); }, [turns, busy]);
 
   const send = async (text: string) => {
     if (!text.trim() || busy) return;
@@ -40,12 +40,14 @@ export default function AIChat() {
   return (
     <>
       <div className="page-head"><h1>AI Manager</h1><span className="muted">Ask anything about attendance, payroll, penalties and performance</span><div className="spacer" />{turns.length > 0 && <button className="btn" onClick={() => setTurns([])}>New chat</button>}</div>
-      {status.data && !status.data.enabled && <div className="notice">AI chat is not configured. Set <code>ANTHROPIC_API_KEY</code> in <code>server/.env</code> and restart the server.</div>}
+      {status.data && !status.data.enabled && (DEMO
+        ? <div className="notice">AI chat uses Claude through the claude.ai viewer. Open this page on claude.ai to ask questions about the demo data.</div>
+        : <div className="notice">AI chat is not configured. Set <code>ANTHROPIC_API_KEY</code> in <code>server/.env</code> and restart the server.</div>)}
       <div className="chat">
         <div className="msgs">
           {turns.length === 0 && (
             <div className="card">
-              <p>I read your live HR data (read-only) and answer with numbers. Try:</p>
+              <p>I read your live HR data (read-only) and answer with numbers.{DEMO ? ' Each question uses your own Claude usage; the first one asks for permission.' : ''} Try:</p>
               <div className="suggestions">{SUGGESTIONS.map((s) => <button key={s} className="btn sm" onClick={() => send(s)}>{s}</button>)}</div>
             </div>
           )}

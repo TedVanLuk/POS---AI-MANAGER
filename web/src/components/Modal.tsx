@@ -38,3 +38,25 @@ export function ReasonDialog({ title, description, confirmLabel = 'Save', onConf
     </Modal>
   );
 }
+
+/** In-page confirmation (browser confirm() is unavailable in embedded viewers). */
+export function ConfirmDialog({ title, message, confirmLabel = 'Confirm', danger, onConfirm, onClose }: {
+  title: string; message: ReactNode; confirmLabel?: string; danger?: boolean;
+  onConfirm: () => Promise<unknown>; onClose: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const go = async () => {
+    setBusy(true);
+    try { await onConfirm(); onClose(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  };
+  return (
+    <Modal title={title} onClose={onClose} actions={<>
+      <button className="btn" onClick={onClose}>Cancel</button>
+      <button className={`btn ${danger ? 'danger' : 'primary'}`} disabled={busy} onClick={go}>{busy ? 'Working…' : confirmLabel}</button>
+    </>}>
+      <div>{message}</div>
+      {error && <div className="error" style={{ marginTop: '.5rem' }}>{error}</div>}
+    </Modal>
+  );
+}

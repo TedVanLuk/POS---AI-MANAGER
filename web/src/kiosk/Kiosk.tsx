@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, ApiError, fmtTime, session, setDisplayTimezone, todayIso } from '../api';
+import { api, ApiError, DEMO, fmtTime, session, setDisplayTimezone, todayIso } from '../api';
 import { WeekStrip, type Week } from '../components/WeekStrip';
 import { DRIVERS, getDriver, identify, setDriver, simulatorDriver, type BiometricDriver, type EnrolledTemplate } from './drivers';
 import { enqueue, flushQueue, loadQueue } from './queue';
@@ -19,7 +19,8 @@ const uuid = () => crypto.randomUUID();
 const RESULT_MS = 7000;
 
 export default function Kiosk() {
-  const [token, setToken] = useState(session.deviceToken());
+  // The demo build ships with a pre-registered simulator tablet.
+  const [token, setToken] = useState(session.deviceToken() ?? (DEMO ? 'demo-kiosk-token-change-me-0000000001' : null));
   const [info, setInfo] = useState<Info | null>(null);
   const [setupError, setSetupError] = useState<string | null>(null);
   const [templates, setTemplates] = useState<EnrolledTemplate[]>([]);
@@ -53,6 +54,7 @@ export default function Kiosk() {
   }, []);
   useEffect(() => {
     if (!token) return;
+    session.setDeviceToken(token);
     void loadAll();
     const t = setInterval(loadAll, 10 * 60_000);
     return () => clearInterval(t);

@@ -7,15 +7,18 @@
     "dev": "vite",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:demo": "tsc -p tsconfig.json --noEmit && vite build --mode demo && node scripts/inline-demo.mjs"
   },
   "devDependencies": {
+    "@types/luxon": "^3.7.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.5.2",
     "vite": "^6.3.5"
   },
   "dependencies": {
+    "luxon": "^3.7.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0"

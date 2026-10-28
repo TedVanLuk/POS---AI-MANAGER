@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { isAdmin, useAuth } from '../auth';
 
 export default function AdminLayout() {
@@ -27,8 +27,8 @@ export default function AdminLayout() {
           <div style={{ color: '#fff' }}>{me?.name}</div>
           <div style={{ opacity: .7, textTransform: 'capitalize' }}>{me?.role}</div>
           <div className="row" style={{ marginTop: '.5rem' }}>
-            <a href="/kiosk" style={{ color: 'var(--sidebar-text)' }}>Kiosk</a>
-            {me?.employeeId && <a href="/me" style={{ color: 'var(--sidebar-text)' }}>My page</a>}
+            <Link to="/kiosk" style={{ color: 'var(--sidebar-text)' }}>Kiosk</Link>
+            {me?.employeeId && <Link to="/me" style={{ color: 'var(--sidebar-text)' }}>My page</Link>}
             <button className="btn sm" onClick={() => { logout(); nav('/login'); }}>Sign out</button>
           </div>
         </div>

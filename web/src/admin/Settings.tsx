@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api, fmtDateTime } from '../api';
 import { useApi } from '../hooks';
-import { Modal } from '../components/Modal';
+import { ConfirmDialog, Modal } from '../components/Modal';
 
 interface PayrollSettings {
   frequency: string; workDaysPerYear: number; hoursPerDay: number; statutorySchedule: string;
@@ -134,12 +134,13 @@ function DevicesTab() {
   const list = useApi<Device[]>('/api/devices');
   const [f, setF] = useState({ name: '', driver: 'simulator' });
   const [token, setToken] = useState<string | null>(null);
+  const [revoking, setRevoking] = useState<Device | null>(null);
   return (
     <div className="grid cols-2">
       <div className="card table-wrap">
         <table>
           <thead><tr><th>Tablet</th><th>Reader</th><th>Last seen</th><th></th></tr></thead>
-          <tbody>{list.data?.map((d) => <tr key={d.id} className={d.active ? '' : 'disabled'}><td>{d.name}</td><td>{d.driver}</td><td>{fmtDateTime(d.lastSeenAt)}</td><td>{d.active && <button className="btn sm danger" onClick={async () => { if (confirm('Revoke this tablet? It will stop working immediately.')) { await api.post(`/api/devices/${d.id}/revoke`); await list.reload(); } }}>Revoke</button>}</td></tr>)}</tbody>
+          <tbody>{list.data?.map((d) => <tr key={d.id} className={d.active ? '' : 'disabled'}><td>{d.name}</td><td>{d.driver}</td><td>{fmtDateTime(d.lastSeenAt)}</td><td>{d.active && <button className="btn sm danger" onClick={() => setRevoking(d)}>Revoke</button>}</td></tr>)}</tbody>
         </table>
       </div>
       <form className="card" onSubmit={async (e) => { e.preventDefault(); const r = await api.post<{ token: string }>('/api/devices', f); setToken(r.token); await list.reload(); }}>
@@ -151,6 +152,7 @@ function DevicesTab() {
         <button className="btn primary" style={{ marginTop: '.75rem' }}>Register</button>
         <p className="muted small">Recommended hardware: SecuGen Hamster Pro 20 (Android or Windows) or ZKTeco ZK9500 on budget. See docs/03-hardware-fingerprint.md.</p>
       </form>
+      {revoking && <ConfirmDialog title="Revoke tablet" danger confirmLabel="Revoke" message={`${revoking.name} will stop working immediately.`} onClose={() => setRevoking(null)} onConfirm={async () => { await api.post(`/api/devices/${revoking.id}/revoke`); await list.reload(); }} />}
       {token && (
         <Modal title="Device token — copy it now" onClose={() => setToken(null)}>
           <p>Open <b>/kiosk</b> on the tablet and paste this token. It is shown only once.</p>
