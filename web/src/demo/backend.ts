@@ -8,6 +8,7 @@ import { buildDailyRecords, summarize, type DayRecord, type ScheduleInput } from
 import { computePayslip, type LineOverride, type PayLine } from '../../../server/src/payroll/engine';
 import { evaluatePenalties } from '../../../server/src/penalties/engine';
 import { computeCard, median } from '../../../server/src/stats/engine';
+import { currentCutoff, dailyTrend, overtimeLeaders } from '../../../server/src/stats/dashboard';
 import { DEFAULT_SETTINGS, withDefaults } from '../../../server/src/settings';
 import type { PenaltyRuleConfig, TenantSettings } from '../../../server/src/db/schema';
 import { ApiError } from '../api';
@@ -47,7 +48,7 @@ interface Store {
 }
 
 const STORE_KEY = 'aim.demo.store.v1';
-const STORE_VERSION = 1;
+const STORE_VERSION = 2;
 export const DEMO_DEVICE_TOKEN = 'demo-kiosk-token-change-me-0000000001';
 const TZ = 'Asia/Manila';
 
@@ -647,19 +648,31 @@ on('GET', '/api/dashboard', (c) => {
   requireUser(c, STAFF);
   const s = store();
   const t = DateTime.now().setZone(TZ);
+  const todayIso = t.toISODate()!;
   const from = t.minus({ days: 13 }).toISODate()!;
-  const { employees, records } = dayRecords(from, t.toISODate()!);
-  const trend = [];
-  for (let d = DateTime.fromISO(from, { zone: TZ }); d.toISODate()! <= t.toISODate()!; d = d.plus({ days: 1 })) {
-    const date = d.toISODate()!;
-    let present = 0, late = 0, absent = 0;
-    for (const recs of records.values()) { const r = recs.find((x) => x.date === date); if (!r) continue; if (r.present) present++; if (r.lateMinutes > 0) late++; if (r.absent) absent++; }
-    trend.push({ date, present, late, absent });
-  }
-  const totals = summarize([...records.values()].flat());
+  const cutoff = currentCutoff(todayIso, settings().payroll.frequency);
+  const { employees, records } = dayRecords(from < cutoff.start ? from : cutoff.start, todayIso);
+  const last14 = new Map([...records].map(([id, days]) => [id, days.filter((d) => d.date >= from)]));
+  const inCutoff = new Map([...records].map(([id, days]) => [id, days.filter((d) => d.date >= cutoff.start)]));
+  const totals = summarize([...last14.values()].flat());
   const lastRun = [...s.runs].sort((a, b) => b.periodStart.localeCompare(a.periodStart))[0];
   const ps = lastRun ? s.payslips.filter((p) => p.runId === lastRun.id) : [];
-  return { activeEmployees: employees.length, last14: totals, attendanceRate: totals.scheduledDays ? totals.daysPresent / totals.scheduledDays : null, pendingPenalties: s.penalties.filter((x) => x.status === 'pending').length, lastRun: lastRun ? { ...lastRun, net: ps.reduce((a, p) => a + p.net, 0), gross: ps.reduce((a, p) => a + p.gross, 0) } : null, trend };
+  const cutoffRun = s.runs.find((r) => r.periodStart === cutoff.start && r.status !== 'void');
+  const week = t.minus({ days: 6 }).toISODate()!;
+  const pendingPenalties = s.penalties.filter((x) => x.status === 'pending').length;
+  return {
+    activeEmployees: employees.length, last14: totals, attendanceRate: totals.scheduledDays ? totals.daysPresent / totals.scheduledDays : null,
+    pendingPenalties, lastRun: lastRun ? { ...lastRun, net: ps.reduce((a, p) => a + p.net, 0), gross: ps.reduce((a, p) => a + p.gross, 0) } : null,
+    trend: dailyTrend(records, from, todayIso),
+    cutoff: { ...cutoff, run: cutoffRun ? { id: cutoffRun.id, status: cutoffRun.status } : null },
+    overtime: overtimeLeaders(employees, inCutoff, settings().payroll),
+    alerts: {
+      pendingPenalties,
+      missingTimeouts: [...records.values()].flat().filter((d) => d.date >= week && d.missingOut).length,
+      missingSerials: serialGaps(from, todayIso).reduce((a, g) => a + g.missing.length, 0),
+      notEnrolled: employees.filter((e) => !s.templates.some((x) => x.employeeId === e.id)).length,
+    },
+  };
 });
 const meEmp = (c: Ctx) => { const u = requireUser(c, [...STAFF, 'employee']); if (!u.employeeId) fail(403, 'This login is not linked to an employee'); return u.employeeId!; };
 on('GET', '/api/me/week', (c) => weekSummary(meEmp(c)));
@@ -747,7 +760,9 @@ function seed(): Store {
   // Five weeks of punches and order slips up to yesterday.
   const t0 = DateTime.now().setZone(TZ).startOf('day');
   let serial = 1000;
-  for (let d = t0.minus({ days: 35 }); d < t0; d = d.plus({ days: 1 })) {
+  const nowDt = DateTime.now().setZone(TZ);
+  // Five weeks of history plus today so far (the time clock looks live).
+  for (let d = t0.minus({ days: 35 }); d <= t0; d = d.plus({ days: 1 })) {
     staff.forEach((x, i) => {
       const e = emps[i];
       if (x.sch.restDays.includes(d.weekday)) return;
@@ -757,12 +772,14 @@ function seed(): Store {
       const late = rand() < x.lateBias ? Math.floor(6 + rand() * 35) : -Math.floor(rand() * 15);
       const inAt = d.set({ hour: sh, minute: sm }).plus({ minutes: late });
       const outAt = d.set({ hour: eh, minute: em }).plus({ minutes: Math.floor(rand() * 75) - 5 });
+      if (inAt > nowDt) return;
       s.punches.push({ id: uid(), employeeId: e.id, deviceId: device.id, type: 'in', punchedAt: inAt.toUTC().toISO()!, method: 'fingerprint', matchScore: 120 + Math.floor(rand() * 60), clientUuid: null, voided: false, createdBy: null, reason: null });
-      if (rand() > 0.03) s.punches.push({ id: uid(), employeeId: e.id, deviceId: device.id, type: 'out', punchedAt: outAt.toUTC().toISO()!, method: 'fingerprint', matchScore: 120 + Math.floor(rand() * 60), clientUuid: null, voided: false, createdBy: null, reason: null });
+      if (outAt < nowDt && rand() > 0.03) s.punches.push({ id: uid(), employeeId: e.id, deviceId: device.id, type: 'out', punchedAt: outAt.toUTC().toISO()!, method: 'fingerprint', matchScore: 120 + Math.floor(rand() * 60), clientUuid: null, voided: false, createdBy: null, reason: null });
       if (x.position.includes('Server')) {
         const n = Math.floor(10 + (rand() * 10) / x.speed);
         for (let k = 0; k < n; k++) {
           const opened = inAt.plus({ minutes: 20 + Math.floor(rand() * 420) });
+          if (opened.plus({ minutes: 60 }) > nowDt) continue;
           const serve = Math.max(4, Math.round((8 + rand() * 12) * x.speed));
           const isVoid = rand() < 0.02 * x.speed;
           serial += rand() < 0.01 ? 2 : 1;

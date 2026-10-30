@@ -99,7 +99,8 @@ async function main() {
   const punches: (typeof schema.attendancePunches.$inferInsert)[] = [];
   const slips: (typeof schema.orderSlips.$inferInsert)[] = [];
   let serial = 1000;
-  for (let d = today.minus({ days: 35 }); d < today; d = d.plus({ days: 1 })) {
+  const nowDt = DateTime.now().setZone(TZ);
+  for (let d = today.minus({ days: 35 }); d <= today; d = d.plus({ days: 1 })) {
     for (const [i, e] of emps.entries()) {
       const s = staff[i];
       const sch = s.sched === daySched.id ? daySched : midSched;
@@ -110,13 +111,15 @@ async function main() {
       const late = rand() < s.lateBias ? Math.floor(6 + rand() * 35) : -Math.floor(rand() * 15);
       const inAt = d.set({ hour: sh, minute: sm }).plus({ minutes: late });
       const outAt = d.set({ hour: eh, minute: em }).plus({ minutes: Math.floor(rand() * 75) - 5 });
+      if (inAt > nowDt) continue;
       punches.push({ tenantId, employeeId: e.id, deviceId: device.id, type: 'in', punchedAt: inAt.toJSDate(), method: 'fingerprint', matchScore: 120 + Math.floor(rand() * 60) });
-      if (rand() > 0.03) punches.push({ tenantId, employeeId: e.id, deviceId: device.id, type: 'out', punchedAt: outAt.toJSDate(), method: 'fingerprint', matchScore: 120 + Math.floor(rand() * 60) });
+      if (outAt < nowDt && rand() > 0.03) punches.push({ tenantId, employeeId: e.id, deviceId: device.id, type: 'out', punchedAt: outAt.toJSDate(), method: 'fingerprint', matchScore: 120 + Math.floor(rand() * 60) });
 
       if (s.position.includes('Server')) {
         const n = Math.floor(10 + rand() * 10 / s.speed);
         for (let k = 0; k < n; k++) {
           const opened = inAt.plus({ minutes: 20 + Math.floor(rand() * 420) });
+          if (opened.plus({ minutes: 60 }) > nowDt) continue;
           const serve = Math.max(4, Math.round((8 + rand() * 12) * s.speed));
           const isVoid = rand() < 0.02 * s.speed;
           serial += rand() < 0.01 ? 2 : 1; // rare gap in serials

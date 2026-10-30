@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, peso } from '../api';
 import { isAdmin, useAuth } from '../auth';
 import { useApi } from '../hooks';
@@ -13,7 +13,9 @@ export default function Employees() {
   const nav = useNavigate();
   const list = useApi<Row[]>('/api/employees');
   const [q, setQ] = useState('');
-  const [adding, setAdding] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const [adding, setAddingState] = useState(params.get('add') === '1');
+  const setAdding = (v: boolean) => { setAddingState(v); if (!v && params.get('add')) setParams({}, { replace: true }); };
   const rows = (list.data ?? []).filter((r) => `${r.firstName} ${r.lastName} ${r.employeeNo} ${r.position}`.toLowerCase().includes(q.toLowerCase()));
   return (
     <>
