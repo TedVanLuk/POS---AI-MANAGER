@@ -1,3 +1,4 @@
+import type { PaperRow } from '../payroll/sheet.js';
 /**
  * Mega Dance Center sample data, transcribed from the client files:
  *  - MDC_SCHEDULE (weekly staff schedule Aug 3–9 + department summary with daily rates)
@@ -5,122 +6,293 @@
  * Week codes: D duty · O off · A all in · L on leave · R reception · N n/a · X no duty · "" not scheduled · other text = DJ/MC set time.
  * "Tech 1/2 (placeholder)" stand in for the technicians the summary counts but the roster does not name.
  */
-export interface MdcDepartment { name: string; group: string; dailyRate: number; shiftStart: string; shiftEnd: string }
+export interface MdcDepartment {
+  paySheet?: string | null;
+  nightDiffHours?: number; name: string; group: string; dailyRate: number; shiftStart: string; shiftEnd: string }
 export const MDC_DEPARTMENTS: MdcDepartment[] = [
  {
   "name": "Supervisors",
   "group": "Operational staff",
   "dailyRate": 770,
   "shiftStart": "18:00",
-  "shiftEnd": "03:00"
+  "shiftEnd": "03:00",
+  "paySheet": "Servers",
+  "nightDiffHours": 7
  },
  {
   "name": "Admin",
   "group": "Operational staff",
   "dailyRate": 550,
   "shiftStart": "10:00",
-  "shiftEnd": "19:00"
+  "shiftEnd": "19:00",
+  "paySheet": "Admin, Cashiers, Bouncers",
+  "nightDiffHours": 0
  },
  {
   "name": "Cashiers",
   "group": "Operational staff",
   "dailyRate": 450,
   "shiftStart": "18:00",
-  "shiftEnd": "03:00"
+  "shiftEnd": "03:00",
+  "paySheet": "Admin, Cashiers, Bouncers",
+  "nightDiffHours": 7
  },
  {
   "name": "Bartenders",
   "group": "Operational staff",
   "dailyRate": 450,
   "shiftStart": "18:00",
-  "shiftEnd": "03:00"
+  "shiftEnd": "03:00",
+  "paySheet": "Bartenders, Checkers, Maintenance",
+  "nightDiffHours": 7
+ },
+ {
+  "name": "Checkers",
+  "group": "Operational staff",
+  "dailyRate": 450,
+  "shiftStart": "18:00",
+  "shiftEnd": "03:00",
+  "paySheet": "Bartenders, Checkers, Maintenance",
+  "nightDiffHours": 7
+ },
+ {
+  "name": "Maintenance",
+  "group": "Operational staff",
+  "dailyRate": 500,
+  "shiftStart": "08:00",
+  "shiftEnd": "17:00",
+  "paySheet": "Bartenders, Checkers, Maintenance",
+  "nightDiffHours": 0
  },
  {
   "name": "Kitchen",
   "group": "Operational staff",
   "dailyRate": 550,
   "shiftStart": "17:00",
-  "shiftEnd": "02:00"
+  "shiftEnd": "02:00",
+  "paySheet": "Kitchen",
+  "nightDiffHours": 7
  },
  {
   "name": "Shisha",
   "group": "Operational staff",
   "dailyRate": 440,
   "shiftStart": "18:00",
-  "shiftEnd": "03:00"
+  "shiftEnd": "03:00",
+  "paySheet": null,
+  "nightDiffHours": 7
  },
  {
   "name": "Housekeeping",
   "group": "Operational staff",
   "dailyRate": 440,
   "shiftStart": "14:00",
-  "shiftEnd": "23:00"
+  "shiftEnd": "23:00",
+  "paySheet": "HK, Recep, Promoters",
+  "nightDiffHours": 7
+ },
+ {
+  "name": "Receptionist",
+  "group": "Operational staff",
+  "dailyRate": 400,
+  "shiftStart": "18:00",
+  "shiftEnd": "03:00",
+  "paySheet": "HK, Recep, Promoters",
+  "nightDiffHours": 7
  },
  {
   "name": "Promoters",
   "group": "Operational staff",
   "dailyRate": 385,
   "shiftStart": "19:00",
-  "shiftEnd": "04:00"
+  "shiftEnd": "04:00",
+  "paySheet": "HK, Recep, Promoters",
+  "nightDiffHours": 7
  },
  {
   "name": "Bouncers",
   "group": "Operational staff",
   "dailyRate": 450,
   "shiftStart": "19:00",
-  "shiftEnd": "04:00"
+  "shiftEnd": "04:00",
+  "paySheet": "Admin, Cashiers, Bouncers",
+  "nightDiffHours": 7
  },
  {
   "name": "Servers",
   "group": "Operational staff",
   "dailyRate": 440,
   "shiftStart": "18:00",
-  "shiftEnd": "03:00"
+  "shiftEnd": "03:00",
+  "paySheet": "Servers",
+  "nightDiffHours": 7
  },
  {
   "name": "VIP Host",
   "group": "Entertainer staff",
   "dailyRate": 600,
   "shiftStart": "20:00",
-  "shiftEnd": "04:00"
+  "shiftEnd": "04:00",
+  "paySheet": null,
+  "nightDiffHours": 7
  },
  {
   "name": "Champagne Girls",
   "group": "Entertainer staff",
   "dailyRate": 600,
   "shiftStart": "20:00",
-  "shiftEnd": "04:00"
+  "shiftEnd": "04:00",
+  "paySheet": null,
+  "nightDiffHours": 7
  },
  {
   "name": "MDC Babes",
   "group": "Entertainer staff",
   "dailyRate": 1200,
   "shiftStart": "20:00",
-  "shiftEnd": "04:00"
+  "shiftEnd": "04:00",
+  "paySheet": null,
+  "nightDiffHours": 7
  },
  {
   "name": "Tech",
   "group": "Sounds/Lights staff",
   "dailyRate": 800,
   "shiftStart": "19:00",
-  "shiftEnd": "04:00"
+  "shiftEnd": "04:00",
+  "paySheet": null,
+  "nightDiffHours": 7
  },
  {
   "name": "DJ",
   "group": "Sounds/Lights staff",
   "dailyRate": 2000,
   "shiftStart": "22:00",
-  "shiftEnd": "05:00"
+  "shiftEnd": "05:00",
+  "paySheet": null,
+  "nightDiffHours": 7
  },
  {
   "name": "MC",
   "group": "Sounds/Lights staff",
   "dailyRate": 1500,
   "shiftStart": "21:00",
-  "shiftEnd": "04:00"
+  "shiftEnd": "04:00",
+  "paySheet": null,
+  "nightDiffHours": 7
  }
 ];
 export interface MdcStaff { name: string; department: string; position: string; week: string[] }
 export const MDC_STAFF: MdcStaff[] = [{"name": "Kaye", "department": "Supervisors", "position": "Supervisor", "week": ["D", "D", "O", "D", "D", "O", "D"]}, {"name": "Charlie", "department": "Supervisors", "position": "Supervisor", "week": ["", "", "", "", "", "", ""]}, {"name": "Jaysah", "department": "Supervisors", "position": "Supervisor", "week": ["O", "D", "D", "O", "D", "D", "D"]}, {"name": "Fremie", "department": "Admin", "position": "Admin Staff", "week": ["D", "D", "O", "D", "D", "O", "D"]}, {"name": "Lhaw", "department": "Admin", "position": "Admin Staff", "week": ["O", "D", "D", "O", "D", "D", "D"]}, {"name": "Jeph", "department": "Cashiers", "position": "Cashier", "week": ["O", "O", "D", "D", "D", "D", "D"]}, {"name": "Marian", "department": "Cashiers", "position": "Cashier", "week": ["D", "D", "O", "O", "D", "D", "O"]}, {"name": "Marynoll", "department": "Cashiers", "position": "Cashier", "week": ["O", "O", "D", "D", "D", "D", "D"]}, {"name": "Ara", "department": "Bartenders", "position": "Bartender", "week": ["D", "D", "D", "O", "D", "D", "D"]}, {"name": "Jamel", "department": "Bartenders", "position": "Bartender", "week": ["O", "D", "D", "D", "D", "D", "D"]}, {"name": "Dustin", "department": "Bartenders", "position": "Bartender", "week": ["D", "O", "D", "D", "D", "D", "D"]}, {"name": "Mjay", "department": "Bartenders", "position": "Bartender", "week": ["D", "D", "O", "D", "D", "D", "D"]}, {"name": "Zoilo", "department": "Bartenders", "position": "Bartender", "week": ["D", "D", "D", "D", "D", "D", "O"]}, {"name": "Chef Del", "department": "Kitchen", "position": "Kitchen Staff", "week": ["D", "D", "O", "O", "D", "D", "D"]}, {"name": "Chef Josh", "department": "Kitchen", "position": "Kitchen Staff", "week": ["O", "O", "D", "D", "D", "D", "D"]}, {"name": "Kenneth K.", "department": "Kitchen", "position": "Kitchen Staff", "week": ["D", "D", "D", "D", "D", "O", "D"]}, {"name": "Marlon K.", "department": "Kitchen", "position": "Kitchen Staff", "week": ["D", "D", "D", "D", "O", "D", "O"]}, {"name": "Ray", "department": "Kitchen", "position": "Kitchen Staff", "week": ["O", "O", "O", "D", "D", "D", "D"]}, {"name": "Archie", "department": "Shisha", "position": "Shisha Maker", "week": ["D", "D", "O", "O", "D", "D", "D"]}, {"name": "Joshua", "department": "Shisha", "position": "Shisha Maker", "week": ["D", "O", "O", "D", "D", "D", "D"]}, {"name": "Louie", "department": "Shisha", "position": "Shisha Maker", "week": ["D", "D", "D", "O", "D", "D", "O"]}, {"name": "Ramil", "department": "Shisha", "position": "Shisha Maker", "week": ["O", "D", "D", "D", "D", "D", "D"]}, {"name": "Kent", "department": "Shisha", "position": "Shisha Maker", "week": ["O", "O", "D", "D", "D", "D", "D"]}, {"name": "Jethro", "department": "Shisha", "position": "Shisha Maker", "week": ["O", "O", "D", "D", "D", "D", "D"]}, {"name": "Kristal", "department": "Shisha", "position": "Shisha Maker", "week": ["D", "D", "D", "D", "D", "D", "D"]}, {"name": "Lady", "department": "Housekeeping", "position": "Housekeeping", "week": ["D", "D", "D", "O", "D", "D", "D"]}, {"name": "Macky", "department": "Housekeeping", "position": "Housekeeping", "week": ["D", "D", "O", "D", "D", "D", "D"]}, {"name": "Annabell", "department": "Housekeeping", "position": "Housekeeping", "week": ["D", "O", "O", "D", "D", "D", "D"]}, {"name": "Jay-r", "department": "Housekeeping", "position": "Housekeeping", "week": ["D", "O", "D", "D", "D", "D", "D"]}, {"name": "Patrick", "department": "Housekeeping", "position": "Housekeeping", "week": ["D", "D", "O", "O", "D", "D", "D"]}, {"name": "Adnan", "department": "Housekeeping", "position": "Housekeeping", "week": ["O", "D", "D", "O", "D", "D", "O"]}, {"name": "Jodyl", "department": "Housekeeping", "position": "Housekeeping", "week": ["O", "D", "D", "D", "O", "D", "O"]}, {"name": "Ricky", "department": "Housekeeping", "position": "Housekeeping", "week": ["O", "O", "D", "D", "D", "D", "D"]}, {"name": "Noah", "department": "Promoters", "position": "Promoter", "week": ["O", "O", "D", "D", "D", "D", "D"]}, {"name": "Yuki", "department": "Promoters", "position": "Promoter", "week": ["O", "O", "D", "D", "D", "D", "D"]}, {"name": "Christian", "department": "Promoters", "position": "Promoter", "week": ["D", "D", "O", "O", "D", "D", "D"]}, {"name": "Dors", "department": "Promoters", "position": "Promoter", "week": ["D", "D", "O", "D", "D", "D", "D"]}, {"name": "James", "department": "Promoters", "position": "Promoter", "week": ["D", "D", "O", "O", "O", "D", "D"]}, {"name": "Jonel", "department": "Bouncers", "position": "Bouncer", "week": ["O", "D", "D", "D", "D", "D", "D"]}, {"name": "Jaguar", "department": "Bouncers", "position": "Bouncer", "week": ["O", "O", "D", "D", "D", "D", "D"]}, {"name": "Rommel", "department": "Bouncers", "position": "Bouncer", "week": ["O", "D", "D", "D", "D", "D", "O"]}, {"name": "Abner", "department": "Bouncers", "position": "Bouncer", "week": ["O", "O", "O", "D", "D", "D", "D"]}, {"name": "Reynan", "department": "Bouncers", "position": "Bouncer", "week": ["D", "D", "O", "D", "D", "O", "O"]}, {"name": "Rico", "department": "Bouncers", "position": "Bouncer", "week": ["D", "O", "O", "O", "D", "D", "D"]}, {"name": "Benjie", "department": "Bouncers", "position": "Bouncer", "week": ["D", "O", "D", "O", "D", "D", "O"]}, {"name": "Brando", "department": "Bouncers", "position": "Bouncer", "week": ["O", "D", "D", "O", "O", "D", "D"]}, {"name": "Jhake", "department": "Bouncers", "position": "Bouncer", "week": ["D", "D", "O", "D", "D", "O", "O"]}, {"name": "Angelo", "department": "Bouncers", "position": "Bouncer", "week": ["D", "D", "O", "O", "O", "D", "O"]}, {"name": "Edlyn", "department": "Bouncers", "position": "Bouncer", "week": ["O", "O", "O", "O", "O", "O", "O"]}, {"name": "Elen", "department": "Bouncers", "position": "Bouncer", "week": ["D", "D", "D", "D", "D", "D", "D"]}, {"name": "Jhay M.", "department": "Bouncers", "position": "Bouncer", "week": ["O", "O", "D", "O", "O", "O", "O"]}, {"name": "Jhay H.", "department": "Bouncers", "position": "Bouncer", "week": ["D", "O", "O", "O", "O", "O", "O"]}, {"name": "RL", "department": "Bouncers", "position": "Bouncer", "week": ["O", "O", "O", "O", "O", "O", "D"]}, {"name": "Darwin", "department": "Servers", "position": "Server (Boys)", "week": ["O", "O", "D", "D", "D", "D", "D"]}, {"name": "Renz", "department": "Servers", "position": "Server (Boys)", "week": ["O", "O", "D", "D", "O", "D", "D"]}, {"name": "Arman", "department": "Servers", "position": "Server (Boys)", "week": ["O", "O", "D", "D", "D", "O", "D"]}, {"name": "Jaylord", "department": "Servers", "position": "Server (Boys)", "week": ["O", "O", "D", "D", "D", "D", "O"]}, {"name": "Stephen", "department": "Servers", "position": "Server (Boys)", "week": ["D", "D", "O", "O", "D", "D", "O"]}, {"name": "Sioco", "department": "Servers", "position": "Server (Boys)", "week": ["D", "D", "O", "O", "D", "D", "D"]}, {"name": "Kenneth S.", "department": "Servers", "position": "Server (Boys)", "week": ["D", "D", "O", "O", "D", "D", "O"]}, {"name": "Edz", "department": "Servers", "position": "Server (Boys)", "week": ["D", "D", "O", "O", "D", "D", "O"]}, {"name": "Jose", "department": "Servers", "position": "Server (Boys)", "week": ["O", "O", "D", "D", "D", "D", "O"]}, {"name": "Arnold", "department": "Servers", "position": "Server (Boys)", "week": ["", "", "", "", "", "", ""]}, {"name": "Jessa C", "department": "Servers", "position": "Server (Girls)", "week": ["O", "O", "O", "O", "D", "D", "D"]}, {"name": "Kimberly D", "department": "Servers", "position": "Server (Girls)", "week": ["O", "O", "D", "D", "O", "O", "D"]}, {"name": "Kristia", "department": "Servers", "position": "Server (Girls)", "week": ["O", "O", "D", "D", "D", "O", "D"]}, {"name": "Janice", "department": "Servers", "position": "Server (Girls)", "week": ["O", "O", "D", "D", "O", "D", "D"]}, {"name": "Julie", "department": "Servers", "position": "Server (Girls)", "week": ["O", "O", "D", "D", "O", "D", "O"]}, {"name": "Glaze", "department": "Servers", "position": "Server (Girls)", "week": ["O", "O", "D", "D", "D", "D", "O"]}, {"name": "Mia", "department": "Servers", "position": "Server (Girls)", "week": ["D", "O", "O", "D", "O", "O", "O"]}, {"name": "Jane", "department": "Servers", "position": "Server (Girls)", "week": ["O", "O", "D", "D", "D", "D", "O"]}, {"name": "Melody", "department": "Servers", "position": "Server (Girls)", "week": ["O", "O", "D", "D", "D", "D", "O"]}, {"name": "Angelica", "department": "Servers", "position": "Server (Girls)", "week": ["O", "O", "D", "D", "D", "O", "D"]}, {"name": "Yhel", "department": "Servers", "position": "Server (Girls)", "week": ["O", "O", "D", "D", "O", "D", "D"]}, {"name": "Lyra", "department": "Servers", "position": "Server (Girls)", "week": ["D", "D", "O", "O", "O", "O", "D"]}, {"name": "Jenny", "department": "Servers", "position": "Server (Girls)", "week": ["O", "O", "D", "D", "D", "D", "O"]}, {"name": "Jona", "department": "Servers", "position": "Server (Girls)", "week": ["O", "O", "D", "D", "D", "D", "O"]}, {"name": "Ellaine", "department": "Servers", "position": "Server (Girls)", "week": ["D", "D", "O", "O", "D", "D", "O"]}, {"name": "Lota", "department": "Servers", "position": "Server (Girls)", "week": ["D", "D", "O", "O", "D", "D", "O"]}, {"name": "Frenche", "department": "Servers", "position": "Server (Girls)", "week": ["D", "D", "O", "O", "D", "D", "O"]}, {"name": "Arianne", "department": "Servers", "position": "Server (Girls)", "week": ["O", "O", "D", "D", "D", "D", "O"]}, {"name": "Nikki", "department": "Servers", "position": "Server (Girls)", "week": ["O", "D", "O", "O", "D", "D", "D"]}, {"name": "Kimcy", "department": "Servers", "position": "Server (Girls)", "week": ["O", "O", "D", "D", "D", "D", "O"]}, {"name": "Kim C.", "department": "Servers", "position": "Server (Girls)", "week": ["D", "D", "O", "O", "D", "O", "D"]}, {"name": "Sai", "department": "Servers", "position": "Server (Girls)", "week": ["D", "D", "O", "O", "D", "O", "D"]}, {"name": "Clarence", "department": "Servers", "position": "Server (Girls)", "week": ["R", "D", "O", "O", "D", "D", "D"]}, {"name": "Mae", "department": "Servers", "position": "Server (Girls)", "week": ["D", "D", "O", "O", "D", "D", "D"]}, {"name": "Bea", "department": "Servers", "position": "Server (Girls)", "week": ["D", "D", "O", "O", "O", "O", "D"]}, {"name": "Erna", "department": "Servers", "position": "Server (Girls)", "week": ["D", "D", "O", "O", "O", "D", "D"]}, {"name": "Aira", "department": "Servers", "position": "Server (Girls)", "week": ["D", "D", "O", "O", "O", "D", "D"]}, {"name": "Realyn", "department": "Servers", "position": "Server (Girls)", "week": ["O", "O", "D", "D", "D", "D", "O"]}, {"name": "Mariel", "department": "Servers", "position": "Server (Girls)", "week": ["O", "O", "D", "D", "D", "O", "D"]}, {"name": "Kristel", "department": "Servers", "position": "Server (Girls)", "week": ["O", "O", "O", "D", "D", "D", "D"]}, {"name": "Jessa B", "department": "Servers", "position": "Server (Girls)", "week": ["D", "D", "O", "O", "D", "D", "O"]}, {"name": "Helen", "department": "Servers", "position": "Server (Girls)", "week": ["D", "R", "O", "O", "O", "R", "D"]}, {"name": "Addie", "department": "Servers", "position": "Server (Girls)", "week": ["O", "O", "D", "D", "D", "D", "O"]}, {"name": "Jackielyn", "department": "Servers", "position": "Server (Girls)", "week": ["", "", "", "", "", "", ""]}, {"name": "Christial", "department": "Servers", "position": "Food Server", "week": ["D", "D", "O", "O", "D", "D", "O"]}, {"name": "Marion", "department": "Servers", "position": "Food Server", "week": ["D", "D", "O", "O", "D", "O", "D"]}, {"name": "Kevin", "department": "Servers", "position": "Food Server", "week": ["O", "O", "D", "D", "O", "D", "D"]}, {"name": "Nhel", "department": "Servers", "position": "Food Server", "week": ["O", "O", "D", "D", "D", "O", "O"]}, {"name": "Bella", "department": "VIP Host", "position": "VIP Host", "week": ["O", "D", "D", "D", "A", "A", "O"]}, {"name": "Thea", "department": "VIP Host", "position": "VIP Host", "week": ["O", "D", "O", "D", "A", "A", "A"]}, {"name": "Michelle", "department": "VIP Host", "position": "VIP Host", "week": ["D", "D", "O", "O", "A", "A", "A"]}, {"name": "Nathalie", "department": "VIP Host", "position": "VIP Host", "week": ["X", "O", "D", "D", "A", "A", "O"]}, {"name": "Jess", "department": "VIP Host", "position": "VIP Host", "week": ["D", "O", "D", "D", "A", "A", "O"]}, {"name": "Eka", "department": "Champagne Girls", "position": "Champagne Girl", "week": ["O", "O", "D", "D", "A", "A", "A"]}, {"name": "Nise", "department": "Champagne Girls", "position": "Champagne Girl", "week": ["L", "L", "L", "L", "L", "L", "L"]}, {"name": "Mycah", "department": "Champagne Girls", "position": "Champagne Girl", "week": ["O", "D", "D", "D", "A", "A", "O"]}, {"name": "Rhestie", "department": "Champagne Girls", "position": "Champagne Girl", "week": ["D", "O", "O", "D", "A", "A", "A"]}, {"name": "Kimmy", "department": "Champagne Girls", "position": "Champagne Girl", "week": ["L", "L", "L", "L", "L", "L", "L"]}, {"name": "Sheng", "department": "Champagne Girls", "position": "Champagne Girl", "week": ["L", "L", "L", "L", "L", "L", "L"]}, {"name": "Donita", "department": "MDC Babes", "position": "MDC Babe", "week": ["D", "D", "D", "N", "D", "D", "D"]}, {"name": "Sandra", "department": "MDC Babes", "position": "MDC Babe", "week": ["N", "N", "D", "D", "D", "D", "D"]}, {"name": "Shantal", "department": "MDC Babes", "position": "MDC Babe", "week": ["D", "D", "N", "D", "D", "N", "D"]}, {"name": "Jessy", "department": "MDC Babes", "position": "MDC Babe", "week": ["D", "N", "N", "D", "D", "D", "D"]}, {"name": "Jojo", "department": "MDC Babes", "position": "MDC Babe", "week": ["D", "D", "D", "D", "N", "N", "N"]}, {"name": "Izumi", "department": "MDC Babes", "position": "MDC Babe", "week": ["D", "D", "D", "D", "N", "N", "N"]}, {"name": "Cherry", "department": "MDC Babes", "position": "MDC Babe", "week": ["D", "D", "D", "N", "N", "D", "N"]}, {"name": "DJ Tommy", "department": "DJ", "position": "DJ", "week": ["10-1:30", "2-5", "N", "N", "3-5", "10-1", "N"]}, {"name": "DJ Kit", "department": "DJ", "position": "DJ", "week": ["1:30-5", "N", "N", "N", "1-3", "N", "N"]}, {"name": "Chris Delaney", "department": "DJ", "position": "DJ", "week": ["N", "1-2", "N", "N", "N", "N", "N"]}, {"name": "DJ Adams", "department": "DJ", "position": "DJ", "week": ["N", "10-1", "10-1:30", "1:30-5", "N", "1-3", "10-1"]}, {"name": "DJ Chan", "department": "DJ", "position": "DJ", "week": ["N", "N", "N", "10-1:30", "10-1", "3-5", "3-5"]}, {"name": "MC Noah", "department": "MC", "position": "MC", "week": ["N", "N", "D", "D", "N", "D", "D"]}, {"name": "MC Bullet", "department": "MC", "position": "MC", "week": ["D", "D", "N", "D", "D", "N", "N"]}, {"name": "Tech 1 (placeholder)", "department": "Tech", "position": "Lights & Sound Tech", "week": ["D", "D", "D", "D", "D", "D", "D"]}, {"name": "Tech 2 (placeholder)", "department": "Tech", "position": "Lights & Sound Tech", "week": ["N", "N", "N", "N", "D", "D", "D"]}];
 /** Servers tracker, October 2026: name → date → metrics (missing = 0). */
 export const MDC_TRACKER: Record<string, Record<string, { orders?: number; salesComms?: number; lds?: number; po?: number }>> = {"Darwin": {"2026-10-03": {"orders": 9}, "2026-10-04": {"orders": 13}, "2026-10-07": {"orders": 6}, "2026-10-08": {"orders": 6}, "2026-10-10": {"orders": 19, "salesComms": 1}, "2026-10-11": {"orders": 6}, "2026-10-17": {"salesComms": 1}}, "Renz": {"2026-10-01": {"orders": 3}, "2026-10-03": {"orders": 7}, "2026-10-09": {"orders": 3}, "2026-10-10": {"orders": 4}}, "Arman": {"2026-10-01": {"orders": 17}, "2026-10-07": {"orders": 24}}, "Jaylord": {"2026-10-01": {"orders": 6}, "2026-10-03": {"orders": 2}, "2026-10-06": {"orders": 10}, "2026-10-07": {"orders": 14}, "2026-10-09": {"orders": 6}, "2026-10-10": {"orders": 5}}, "Sioco": {"2026-10-01": {"orders": 2}, "2026-10-03": {"orders": 18}, "2026-10-04": {"orders": 31}, "2026-10-05": {"orders": 15}, "2026-10-08": {"orders": 12}, "2026-10-09": {"orders": 17}, "2026-10-11": {"orders": 12}, "2026-10-14": {"lds": 4}, "2026-10-18": {"lds": 3}}, "Edz": {"2026-10-03": {"orders": 6}, "2026-10-05": {"orders": 6}, "2026-10-07": {"orders": 11}, "2026-10-08": {"orders": 8}, "2026-10-09": {"orders": 7}, "2026-10-11": {"orders": 3}, "2026-10-15": {"lds": 1}, "2026-10-17": {"salesComms": 4}}, "Arnold": {"2026-10-03": {"orders": 4}, "2026-10-06": {"orders": 5}, "2026-10-09": {"orders": 5}, "2026-10-10": {"orders": 6}}, "Jose": {"2026-10-01": {"orders": 15}, "2026-10-03": {"orders": 13}, "2026-10-06": {"orders": 17}, "2026-10-08": {"orders": 16}, "2026-10-09": {"salesComms": 1}, "2026-10-17": {"salesComms": 2}, "2026-10-18": {"salesComms": 1}}, "Jessa C": {"2026-10-04": {"orders": 14}, "2026-10-05": {"orders": 23}, "2026-10-06": {"orders": 12}, "2026-10-07": {"orders": 12}, "2026-10-10": {"orders": 11}, "2026-10-11": {"orders": 23}, "2026-10-17": {"salesComms": 1}, "2026-10-18": {"salesComms": 1, "lds": 11}}, "Kimberly D": {"2026-10-01": {"orders": 15}, "2026-10-04": {"orders": 8}, "2026-10-06": {"orders": 10}, "2026-10-07": {"orders": 12}, "2026-10-11": {"orders": 12}}, "Kristia": {"2026-10-03": {"orders": 10}, "2026-10-04": {"orders": 3}, "2026-10-07": {"orders": 11}, "2026-10-09": {"orders": 8}, "2026-10-10": {"orders": 3}, "2026-10-11": {"orders": 13}, "2026-10-15": {"lds": 2}}, "Janice": {"2026-10-01": {"orders": 5}, "2026-10-06": {"orders": 17}, "2026-10-07": {"orders": 17}, "2026-10-09": {"orders": 8}, "2026-10-10": {"orders": 3}, "2026-10-11": {"orders": 14}, "2026-10-17": {"lds": 3}}, "Julie": {"2026-10-01": {"orders": 5}, "2026-10-03": {"orders": 1}, "2026-10-04": {"orders": 11}, "2026-10-07": {"orders": 6}}, "Glaze": {"2026-10-01": {"orders": 6}, "2026-10-03": {"orders": 7, "lds": 4}, "2026-10-04": {"orders": 14}, "2026-10-07": {"orders": 10}, "2026-10-08": {"orders": 11, "lds": 10}, "2026-10-09": {"lds": 10}, "2026-10-10": {"lds": 17}, "2026-10-11": {"orders": 19}, "2026-10-15": {"lds": 11}, "2026-10-17": {"lds": 9}, "2026-10-18": {"lds": 11}}, "Jane": {"2026-10-04": {"orders": 19}, "2026-10-07": {"orders": 14}, "2026-10-08": {"orders": 15, "salesComms": 1, "lds": 12}, "2026-10-09": {"orders": 4, "salesComms": 1, "lds": 15}, "2026-10-10": {"orders": 14, "lds": 13}, "2026-10-11": {"orders": 19, "salesComms": 1}, "2026-10-12": {"salesComms": 1}, "2026-10-14": {"salesComms": 2, "lds": 2}, "2026-10-17": {"lds": 20}, "2026-10-18": {"lds": 4}}, "Melody": {"2026-10-01": {"orders": 7}, "2026-10-03": {"orders": 11}, "2026-10-04": {"lds": 2}, "2026-10-08": {"orders": 8, "lds": 3}, "2026-10-09": {"lds": 4}, "2026-10-10": {"orders": 13}, "2026-10-17": {"lds": 3}}, "Yhel": {"2026-10-01": {"orders": 12}, "2026-10-02": {"salesComms": 1}, "2026-10-03": {"orders": 11, "salesComms": 1}, "2026-10-05": {"orders": 3}, "2026-10-07": {"orders": 9}, "2026-10-09": {"orders": 13}, "2026-10-10": {"orders": 4}, "2026-10-11": {"orders": 9}}, "Lyra": {"2026-10-04": {"orders": 15}, "2026-10-05": {"orders": 2}, "2026-10-07": {"orders": 9}, "2026-10-08": {"orders": 9}, "2026-10-10": {"orders": 15}, "2026-10-11": {"orders": 14}, "2026-10-12": {"orders": 3}}, "Jenny": {"2026-10-01": {"orders": 5}, "2026-10-03": {"orders": 23}, "2026-10-06": {"orders": 14}, "2026-10-07": {"orders": 17}, "2026-10-08": {"orders": 12}, "2026-10-09": {"orders": 20}, "2026-10-10": {"orders": 7}}, "Jona": {"2026-10-03": {"orders": 3, "salesComms": 1, "lds": 10}, "2026-10-04": {"salesComms": 1, "lds": 2}, "2026-10-06": {"orders": 11}, "2026-10-07": {"orders": 8}, "2026-10-08": {"orders": 7, "salesComms": 1, "lds": 9}, "2026-10-09": {"orders": 17, "lds": 14}, "2026-10-10": {"orders": 10, "lds": 13}, "2026-10-17": {"lds": 4}, "2026-10-18": {"salesComms": 1, "lds": 8}}, "Ellaine": {"2026-10-03": {"orders": 13, "lds": 3}, "2026-10-05": {"orders": 8}, "2026-10-09": {"orders": 10}, "2026-10-10": {"orders": 6}}, "Lota": {"2026-10-03": {"orders": 5}, "2026-10-05": {"orders": 9}, "2026-10-06": {"orders": 9}, "2026-10-10": {"orders": 11, "lds": 2}, "2026-10-16": {"lds": 2}}, "Frenche": {"2026-10-01": {"orders": 5}}, "Arianne": {"2026-10-04": {"orders": 6}, "2026-10-05": {"orders": 8}, "2026-10-15": {"lds": 3}}, "Nikki": {"2026-10-01": {"orders": 19, "salesComms": 1}, "2026-10-03": {"orders": 24, "salesComms": 1}, "2026-10-04": {"orders": 6}, "2026-10-06": {"orders": 16}, "2026-10-08": {"orders": 10, "lds": 2}, "2026-10-09": {"orders": 19, "salesComms": 2}, "2026-10-10": {"orders": 5}, "2026-10-11": {"orders": 2}}, "Kim C.": {"2026-10-03": {"orders": 17}, "2026-10-06": {"orders": 6}, "2026-10-07": {"orders": 5}, "2026-10-08": {"orders": 13}, "2026-10-10": {"orders": 14}}, "Bea": {"2026-10-03": {"lds": 5}, "2026-10-06": {"orders": 8}, "2026-10-08": {"orders": 6, "lds": 3}, "2026-10-10": {"orders": 21}, "2026-10-18": {"lds": 4}}, "Erna": {"2026-10-01": {"orders": 6}, "2026-10-03": {"orders": 18}, "2026-10-04": {"orders": 6, "lds": 7}, "2026-10-07": {"orders": 6}, "2026-10-08": {"orders": 13, "lds": 19}, "2026-10-09": {"orders": 5, "lds": 5}, "2026-10-11": {"orders": 16}, "2026-10-16": {"lds": 5}, "2026-10-18": {"lds": 9}}, "Aira": {"2026-10-01": {"orders": 6}, "2026-10-03": {"orders": 8}, "2026-10-04": {"orders": 8}, "2026-10-06": {"orders": 4}, "2026-10-11": {"orders": 9}, "2026-10-12": {"orders": 8}}, "Realyn": {"2026-10-01": {"orders": 12}, "2026-10-03": {"orders": 3, "lds": 6}, "2026-10-04": {"lds": 24}, "2026-10-07": {"orders": 4}, "2026-10-09": {"lds": 2}, "2026-10-10": {"orders": 7}}, "Mariel": {"2026-10-04": {"orders": 12}, "2026-10-05": {"orders": 6}, "2026-10-07": {"orders": 11}, "2026-10-08": {"orders": 19, "lds": 10}, "2026-10-09": {"lds": 5}, "2026-10-11": {"orders": 22, "salesComms": 10}, "2026-10-17": {"lds": 4}, "2026-10-19": {"lds": 4}}, "Jessa B": {"2026-10-03": {"orders": 9, "lds": 2}, "2026-10-05": {"orders": 4}, "2026-10-06": {"orders": 2}, "2026-10-09": {"orders": 8}, "2026-10-10": {"orders": 10}}, "Addie": {"2026-10-03": {"orders": 16}, "2026-10-04": {"orders": 12}, "2026-10-07": {"orders": 10}, "2026-10-08": {"orders": 13}, "2026-10-09": {"orders": 13}, "2026-10-10": {"orders": 5}, "2026-10-11": {"orders": 16}}, "Christial": {"2026-10-03": {"orders": 11}, "2026-10-05": {"orders": 4}, "2026-10-10": {"orders": 9}, "2026-10-11": {"orders": 16}}, "Marion": {"2026-10-01": {"orders": 12}, "2026-10-06": {"orders": 6}, "2026-10-08": {"orders": 6}}, "Kevin": {"2026-10-01": {"orders": 21}, "2026-10-03": {"orders": 22}, "2026-10-04": {"orders": 18}, "2026-10-07": {"orders": 6}, "2026-10-08": {"orders": 11, "lds": 2}, "2026-10-09": {"orders": 14, "salesComms": 2}, "2026-10-10": {"orders": 10}, "2026-10-11": {"orders": 14}, "2026-10-17": {"lds": 1}}, "Nhel": {"2026-10-01": {"orders": 3}, "2026-10-03": {"orders": 4}, "2026-10-07": {"orders": 3}, "2026-10-10": {"orders": 10}}, "Jaysah": {"2026-10-01": {"orders": 22}, "2026-10-03": {"orders": 25, "salesComms": 1, "lds": 22}, "2026-10-06": {"orders": 14}, "2026-10-07": {"orders": 6}, "2026-10-08": {"orders": 5, "salesComms": 2, "lds": 7}, "2026-10-10": {"salesComms": 1, "lds": 2}, "2026-10-11": {"orders": 8, "salesComms": 4}, "2026-10-12": {"orders": 6}}, "Charlie": {"2026-10-01": {"orders": 9, "salesComms": 1}, "2026-10-04": {"orders": 5}, "2026-10-07": {"orders": 8}, "2026-10-08": {"orders": 5, "salesComms": 1}, "2026-10-10": {"orders": 7, "salesComms": 1}}, "Jackielyn": {"2026-10-01": {"lds": 6}, "2026-10-03": {"orders": 14}, "2026-10-04": {"orders": 14}, "2026-10-07": {"orders": 4}, "2026-10-08": {"orders": 6}, "2026-10-10": {"orders": 9}, "2026-10-12": {"orders": 3}, "2026-10-18": {"lds": 10}}, "Kenneth S.": {"2026-10-03": {"orders": 13}, "2026-10-05": {"orders": 2}, "2026-10-06": {"orders": 6}, "2026-10-09": {"orders": 14}, "2026-10-10": {"orders": 8}, "2026-10-17": {"lds": 5}}, "Mia": {"2026-10-08": {"orders": 17, "lds": 6}}, "Kimcy": {"2026-10-05": {"orders": 5}}, "Kristel": {"2026-10-09": {"orders": 14}, "2026-10-10": {"orders": 9}, "2026-10-11": {"orders": 12}}, "Kaye": {"2026-10-05": {"orders": 2}, "2026-10-07": {"orders": 9}, "2026-10-10": {"orders": 15, "lds": 6}, "2026-10-11": {"orders": 10}}};
+
+/** The client's Oct. 5-11 payroll (8-page PDF), row for row, used to seed and test the weekly payroll sheet. */
+export const MDC_PAYROLL_OCT_5_11 = {
+  periodStart: '2026-10-05', periodEnd: '2026-10-11', cashReceived: 136554,
+  sheets: ['Admin, Cashiers, Bouncers', 'Servers', 'HK, Recep, Promoters', 'Bartenders, Checkers, Maintenance', 'Kitchen'],
+  /** [sheet, section, name, days, dailyRate, fixedPay, otHours, ndHours, ndPerDay, deductions, paid, remarks] */
+  rows: [
+    ["Admin, Cashiers, Bouncers", "Admin", "Fremie", 5.0, 1000.0, null, 0, 0, 0, 0, true, null],
+    ["Admin, Cashiers, Bouncers", "Admin", "Jeanmar Dedoroy", 5.0, 500.0, null, 0, 0, 0, 0, true, null],
+    ["Admin, Cashiers, Bouncers", "Cashiers", "Jephony Malunes", 5.0, 500.0, null, 0, 35.0, 7.0, 0, true, null],
+    ["Admin, Cashiers, Bouncers", "Cashiers", "Marian de Jarlo", 4.0, 450.0, null, 0, 28.0, 7.0, 0, true, null],
+    ["Admin, Cashiers, Bouncers", "Cashiers", "Marynoll Padua", 5.0, 450.0, null, 0, 35.0, 7.0, 0, true, null],
+    ["Admin, Cashiers, Bouncers", "Bouncers", "Jonel Francisco", 5.0, 500.0, null, 0, 35.0, 7.0, 0, true, null],
+    ["Admin, Cashiers, Bouncers", "Bouncers", "Rommel Paras", 4.0, 450.0, null, 0, 28.0, 7.0, 0, false, null],
+    ["Admin, Cashiers, Bouncers", "Bouncers", "Abner Lansangan", 4.0, 450.0, null, 0, 28.0, 7.0, 0, true, null],
+    ["Admin, Cashiers, Bouncers", "Bouncers", "Reynan Sevilla", 3.0, 450.0, null, 0, 21.0, 7.0, 0, false, null],
+    ["Admin, Cashiers, Bouncers", "Bouncers", "Ronald Mabini", 4.0, 450.0, null, 0, 28.0, 7.0, 0, true, null],
+    ["Admin, Cashiers, Bouncers", "Bouncers", "Rico Cajipo", 4.0, 450.0, null, 0, 28.0, 7.0, 0, true, null],
+    ["Admin, Cashiers, Bouncers", "Bouncers", "Brando Manansala", 4.0, 450.0, null, 0, 28.0, 7.0, 0, true, null],
+    ["Admin, Cashiers, Bouncers", "Bouncers", "Benjie Lipasana", 4.0, 450.0, null, 0, 28.0, 7.0, 0, false, null],
+    ["Admin, Cashiers, Bouncers", "Bouncers", "Edlyn Padilla", 3.0, 450.0, null, 0, 21.0, 7.0, 0, true, null],
+    ["Admin, Cashiers, Bouncers", "Bouncers", "Angelo Gueco", 3.0, 450.0, null, 0, 21.0, 7.0, 0, false, null],
+    ["Admin, Cashiers, Bouncers", "Bouncers", "Nick Cajipo (Jhake)", 4.0, 450.0, null, 0, 28.0, 7.0, 0, false, null],
+    ["Admin, Cashiers, Bouncers", "Bouncers", "Elenita Del Monte", 4.0, 450.0, null, 0, 28.0, 7.0, 0, false, null],
+    ["Admin, Cashiers, Bouncers", "Bouncers", "Willy Hala (Jhay)", 3.0, 450.0, null, 0, 21.0, 7.0, 0, false, null],
+    ["Admin, Cashiers, Bouncers", "Bouncers", "Roque Yaya (RL)", 4.0, 450.0, null, 0, 28.0, 7.0, 0, true, null],
+    ["Admin, Cashiers, Bouncers", "Bouncers", "JP Reyes", 4.0, 450.0, null, 0, 28.0, 7.0, 1468.13, false, "Double payment of salary last 9/28-10/4 cut off"],
+    ["Admin, Cashiers, Bouncers", "Bouncers", "Ramzel", 5.0, 450.0, null, 0, 0, 0.0, 0, false, null],
+    ["Servers", "Servers", "Arnold Desoloc", 4.0, 400.0, null, 0, 28.0, 7.0, 90.0, false, "Gross salary was blank on the paper sheet (net showed 50.00)"],
+    ["Servers", "Servers", "Kristia Garche", 4.0, 400.0, null, 0, 28.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "John Jose Catacutan", 3.0, 400.0, null, 0, 21.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Glecy Bogtong", 4.0, 400.0, null, 0, 28.0, 7.0, 90.0, false, null],
+    ["Servers", "Servers", "Jay Lord Sansan", 4.0, 400.0, null, 0, 28.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Mia Veronica Nery", 1.0, 400.0, null, 0, 7.0, 7.0, 390.0, false, null],
+    ["Servers", "Servers", "Jessa Biason", 4.0, 400.0, null, 0, 28.0, 7.0, 90.0, false, null],
+    ["Servers", "Servers", "Jessa Corpin", 5.0, 400.0, null, 0, 35.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Jenilyn Medina", 5.0, 400.0, null, 0, 35.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Bea Angeles", 3.0, 400.0, null, 0, 21.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Kimberly Dorado", 3.0, 400.0, null, 0, 21.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Lyra Cadiang", 5.0, 400.0, null, 0, 35.0, 7.0, 1090.0, true, null],
+    ["Servers", "Servers", "Ayumi Arenos", 1.0, 400.0, null, 0, 7.0, 7.0, 90.0, false, null],
+    ["Servers", "Servers", "Erna Catersang", 4.0, 400.0, null, 0, 28.0, 7.0, 90.0, false, null],
+    ["Servers", "Servers", "Aira Rafol", 2.0, 400.0, null, 0, 14.0, 7.0, 90.0, false, null],
+    ["Servers", "Servers", "Realyn Pascua", 4.0, 400.0, null, 0, 28.0, 7.0, 90.0, false, null],
+    ["Servers", "Servers", "Mary Jane De Guzman", 5.0, 500.0, null, 0, 35.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Frenche Alpis", 1.0, 400.0, null, 0, 7.0, 7.0, 90.0, false, null],
+    ["Servers", "Servers", "Jonalyn Recacho", 5.0, 400.0, null, 0, 35.0, 7.0, 90.0, false, null],
+    ["Servers", "Servers", "Lota Boctot", 3.0, 400.0, null, 0, 21.0, 7.0, 90.0, false, null],
+    ["Servers", "Servers", "Darwin Rivera", 5.0, 500.0, null, 0, 35.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Ellen Mae Reyes", 4.0, 400.0, null, 0, 28.0, 7.0, 90.0, false, null],
+    ["Servers", "Servers", "Stephen Tambidao", 0, 400.0, null, 0, 0, 7, 0, false, null],
+    ["Servers", "Servers", "Jonhel Cañete", 2.0, 400.0, null, 0, 14.0, 7.0, 0, true, null],
+    ["Servers", "Servers", "Christial Reyes", 3.0, 400.0, null, 0, 21.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Zyrane Galizim", 0, 400.0, null, 0, 0, 7, 0, false, null],
+    ["Servers", "Servers", "Kimberly Cuenco", 5.0, 400.0, null, 0, 35.0, 7.0, 90.0, false, null],
+    ["Servers", "Servers", "Marlon Rivera", 3.0, 400.0, null, 0, 21.0, 7.0, 890.0, false, null],
+    ["Servers", "Servers", "Yhel Tapinet", 5.0, 400.0, null, 0, 35.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Clarence Masangya", 0, 400.0, null, 0, 0, 7, 0, false, null],
+    ["Servers", "Servers", "Ernesto Sioco", 4.0, 400.0, null, 0, 28.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Mariel Labian", 5.0, 400.0, null, 0, 35.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Helen Castillo", 0, 400.0, null, 0, 0, 7, 0, false, null],
+    ["Servers", "Servers", "Kevin Ang", 5.0, 400.0, null, 0, 35.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Julie Sadullo", 1.0, 400.0, null, 0, 7.0, 7.0, 90.0, false, null],
+    ["Servers", "Servers", "Jessa Yutila (Supervisor)", 7.0, 700.0, null, 0, 49.0, 7.0, 1499.0, false, null],
+    ["Servers", "Servers", "Khay Natnat (Supervisor)", 0, 700.0, null, 0, 0, 7, 0, false, null],
+    ["Servers", "Servers", "Charlie Bogtong (Supervisor)", 0, 700.0, null, 0, 0, 7, 0, false, null],
+    ["Servers", "Servers", "Annielyn Antoc", 4.5, 700.0, null, 0, 11.0, 2.4444, 0, false, null],
+    ["Servers", "Servers", "Janice Gonzales", 5.0, 400.0, null, 0, 35.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Aileen Ignacio", 5.0, 400.0, null, 0, 35.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Arianne Coronel", 1.0, 400.0, null, 0, 7.0, 7.0, 390.0, false, null],
+    ["Servers", "Servers", "Edizon Yuzon", 5.0, 400.0, null, 0, 35.0, 7.0, 590.0, false, null],
+    ["Servers", "Servers", "Renz Mabatas", 4.0, 400.0, null, 0, 28.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Arman Balane", 0, 400.0, null, 0, 0, 7, 0, false, null],
+    ["Servers", "Servers", "Melody Seriosa", 3.0, 400.0, null, 0, 21.0, 7.0, 90.0, false, null],
+    ["Servers", "Servers", "Ma. Adelyn Antoc", 8.0, 400.0, null, 0, 56.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Kristel Garche", 3.0, 400.0, null, 0, 21.0, 7.0, 90.0, false, null],
+    ["Servers", "Servers", "Kenneth Gocela", 4.0, 400.0, null, 0, 28.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Jackie Recacho", 5.0, 400.0, null, 0, 35.0, 7.0, 90.0, true, null],
+    ["Servers", "Servers", "Jessa Yutila (Server)", 0, 500.0, null, 0, 0, 7, 0, false, null],
+    ["Servers", "Servers", "Khay Natnat (Server)", 4.0, 500.0, null, 0, 28.0, 7.0, 0, true, null],
+    ["Servers", "Servers", "Charlie Bogtong (Server)", 5.0, 500.0, null, 0, 35.0, 7.0, 0, true, null],
+    ["HK, Recep, Promoters", "Housekeeping", "Ricky John Garboneta", 6.0, 550.0, null, 0, 0, 0.0, 0, true, null],
+    ["HK, Recep, Promoters", "Housekeeping", "Patrick Francisco", 6.0, 400.0, null, 4.0, 42.0, 7.0, 0, true, null],
+    ["HK, Recep, Promoters", "Housekeeping", "Annabell Lising", 6.0, 400.0, null, 0, 42.0, 7.0, 0, true, null],
+    ["HK, Recep, Promoters", "Housekeeping", "Jodyl Ladero", 5.0, 400.0, null, 0, 5.0, 1.0, 0, true, null],
+    ["HK, Recep, Promoters", "Housekeeping", "Lady Lee Alcaria", 7.0, 400.0, null, 0, 0, 0.0, 0, true, null],
+    ["HK, Recep, Promoters", "Housekeeping", "Adnan Batara", 6.0, 400.0, null, 0, 42.0, 7.0, 0, true, null],
+    ["HK, Recep, Promoters", "Housekeeping", "Abuhamsa Batara", 6.0, 400.0, null, 0, 0, 0.0, 0, true, null],
+    ["HK, Recep, Promoters", "Housekeeping", "Macky Ariraya", 7.0, 400.0, null, 0, 0, 0.0, 0, true, null],
+    ["HK, Recep, Promoters", "Receptionist", "Anne Vergara", 4.0, 400.0, null, 0, 28.0, 7.0, 0, true, null],
+    ["HK, Recep, Promoters", "Promoters", "Esmael Lobos (Noah)", 2.0, 350.0, null, 0, 14.0, 7.0, 0, true, null],
+    ["HK, Recep, Promoters", "Promoters", "Hemler Narzabal (Dors)", 2.0, 350.0, null, 0, 14.0, 7.0, 750.0, true, null],
+    ["HK, Recep, Promoters", "Promoters", "Christian Lacandula", 5.0, 350.0, null, 0, 35.0, 7.0, 150.0, true, null],
+    ["HK, Recep, Promoters", "Promoters", "Aldrian Padilla (James)", 4.0, 350.0, null, 0, 28.0, 7.0, 300.0, true, null],
+    ["HK, Recep, Promoters", "Promoters", "Yuki", 4.0, 350.0, null, 0, 28.0, 7.0, 300.0, true, null],
+    ["Bartenders, Checkers, Maintenance", "Bartenders", "Zoilo Luares", 5.0, 450.0, null, 0, 35.0, 7.0, 390.0, false, null],
+    ["Bartenders, Checkers, Maintenance", "Bartenders", "Jamel Batara", 5.0, 450.0, null, 0, 35.0, 7.0, 540.0, true, null],
+    ["Bartenders, Checkers, Maintenance", "Bartenders", "Mjay Herrero", 7.0, 450.0, null, 0, 49.0, 7.0, 390.0, true, null],
+    ["Bartenders, Checkers, Maintenance", "Bartenders", "Dustin Dizon", 4.0, 450.0, null, 0, 28.0, 7.0, 390.0, true, null],
+    ["Bartenders, Checkers, Maintenance", "Checkers", "Kristal Duckworth", 3.0, 450.0, null, 0, 21.0, 7.0, 300.0, true, null],
+    ["Bartenders, Checkers, Maintenance", "Checkers", "Sarah Rapista", 4.0, 450.0, null, 0, 28.0, 7.0, 0, true, null],
+    ["Bartenders, Checkers, Maintenance", "Checkers", "Maria Cecilia Ratac", 5.0, 600.0, null, 0, 35.0, 7.0, 0, true, null],
+    ["Bartenders, Checkers, Maintenance", "Maintenance", "Edwin Dayrit", 0, 0, 4500.0, 0, 0, 0, 0, false, null],
+    ["Kitchen", "Kitchen", "Joshua Zablan", 5.0, 500.0, null, 0, 35.0, 7.0, 0, true, null],
+    ["Kitchen", "Kitchen", "Edelberto Cantos", 5.0, 500.0, null, 0, 35.0, 7.0, 0, true, null],
+    ["Kitchen", "Kitchen", "Kenneth Francisco", 5.0, 400.0, null, 0, 35.0, 7.0, 0, true, null],
+    ["Kitchen", "Kitchen", "Marlon Lazalita", 5.0, 400.0, null, 0, 35.0, 7.0, 0, true, null],
+    ["Kitchen", "Kitchen", "Christopher Santiago", 6.0, 400.0, null, 0, 42.0, 7.0, 0, true, null],
+  ] as PaperRow[],
+};

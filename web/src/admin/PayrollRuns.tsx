@@ -5,6 +5,7 @@ import { isAdmin, useAuth } from '../auth';
 import { useApi } from '../hooks';
 import { Modal } from '../components/Modal';
 import Penalties from './Penalties';
+import PaySheets from './PaySheets';
 
 interface Run { id: string; periodStart: string; periodEnd: string; payDate: string | null; frequency: string; cutoff: number; status: string; employees: number; gross: number; net: number }
 export const STATUS_BADGE: Record<string, string> = { draft: '', review: 'info', approved: 'good', paid: 'good', void: 'bad' };
@@ -20,23 +21,23 @@ function nextPeriod(runs: Run[]) {
   return { periodStart: fmt(new Date(y, m, 16)), periodEnd: fmt(new Date(y, m + 1, 0)) };
 }
 
-const TABS = [['runs', 'Payroll runs'], ['penalties', 'Penalties']] as const;
+const TABS = [['weekly', 'Weekly payroll'], ['runs', 'Statutory payroll (SSS · PhilHealth · Pag-IBIG · tax)'], ['penalties', 'Penalties']] as const;
 
 /** Payroll section: cutoff runs, plus the penalties that feed their deductions. */
 export default function PayrollRuns() {
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') === 'penalties' ? 'penalties' : 'runs';
+  const tab = TABS.find(([k]) => k === params.get('tab'))?.[0] ?? 'weekly';
   const pending = useApi<unknown[]>('/api/penalties?status=pending');
   return (
     <>
       <div className="tabs" role="tablist" aria-label="Payroll sections">
         {TABS.map(([k, label]) => (
-          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'active' : ''} onClick={() => setParams(k === 'runs' ? {} : { tab: k }, { replace: true })}>
+          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'active' : ''} onClick={() => setParams(k === 'weekly' ? {} : { tab: k }, { replace: true })}>
             {label}{k === 'penalties' && pending.data?.length ? ` · ${pending.data.length} to review` : ''}
           </button>
         ))}
       </div>
-      {tab === 'penalties' ? <Penalties embedded /> : <Runs />}
+      {tab === 'penalties' ? <Penalties embedded /> : tab === 'runs' ? <Runs /> : <PaySheets />}
     </>
   );
 }
@@ -51,7 +52,7 @@ function Runs() {
   return (
     <>
       <div className="page-head">
-        <h1>Payroll</h1>
+        <h1>Statutory payroll</h1>
         <div className="spacer" />
         {isAdmin(me?.role) && <button className="btn primary" onClick={() => { setF({ ...nextPeriod(runs.data ?? []), payDate: '' }); setOpen(true); }}>+ New payroll run</button>}
       </div>

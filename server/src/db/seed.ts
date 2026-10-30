@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 /**
  * Demo data: one restaurant tenant, staff, schedules, PH holidays, 5 weeks of punches,
  * order slips, notes, penalty rules and a kiosk device. Safe to re-run (wipes the demo tenant).
@@ -9,7 +10,8 @@ import { runMigrations } from './migrate.js';
 import { encrypt, sha256 } from '../lib/crypto.js';
 import { hashSecret } from '../modules/auth.routes.js';
 import { DEFAULT_SETTINGS } from '../settings.js';
-import { MDC_DEPARTMENTS, MDC_STAFF, MDC_TRACKER } from './mdc-data.js';
+import { nameLinker, rowsFromPaper } from '../payroll/sheet.js';
+import { MDC_DEPARTMENTS, MDC_PAYROLL_OCT_5_11, MDC_STAFF, MDC_TRACKER } from './mdc-data.js';
 import { isOnDuty } from '../stats/roster.js';
 
 const TZ = 'Asia/Manila';
@@ -51,7 +53,7 @@ async function main() {
     await db.delete(schema.tenants).where(eq(schema.tenants.id, t.id));
   }
 
-  const settings = { ...DEFAULT_SETTINGS, departments: MDC_DEPARTMENTS };
+  const settings = { ...DEFAULT_SETTINGS, departments: MDC_DEPARTMENTS, paySheets: MDC_PAYROLL_OCT_5_11.sheets };
   const [tenant] = await db.insert(schema.tenants).values({ name: DEMO_TENANT, timezone: TZ, settings }).returning();
   const tenantId = tenant.id;
   const [branch] = await db.insert(schema.branches).values({ tenantId, name: 'MDC Main', address: 'Mega Dance Center' }).returning();
@@ -131,7 +133,15 @@ async function main() {
     note('Mia', 'coaching', 'Low orders', 'Pair with Jane on Friday shifts.', 0),
   ]);
 
-  console.log(`\nSeeded "${DEMO_TENANT}": ${emps.length} staff, ${punches.length} punches, ${stats.length} tracker days`);
+  // The client's Oct. 5-11 weekly payroll, row for row (linked to staff where the name matches).
+  const link = nameLinker(emps.map((e) => ({ id: e.id, name: `${e.firstName} ${e.lastName}`.trim(), department: e.department })));
+  await db.insert(schema.paySheets).values({
+    tenantId, periodStart: MDC_PAYROLL_OCT_5_11.periodStart, periodEnd: MDC_PAYROLL_OCT_5_11.periodEnd, status: 'final',
+    cashReceived: MDC_PAYROLL_OCT_5_11.cashReceived, rows: rowsFromPaper(MDC_PAYROLL_OCT_5_11.rows, randomUUID, link),
+    createdBy: admin.id, finalizedBy: admin.id, finalizedAt: new Date('2026-10-12T04:00:00Z'), notes: 'Imported from the Oct. 5-11 payroll PDF',
+  });
+
+  console.log(`\nSeeded "${DEMO_TENANT}": ${emps.length} staff, ${punches.length} punches, ${stats.length} tracker days, Oct. 5-11 payroll`);
   console.log('  Owner:     admin@demo.ph / Admin123!');
   console.log('  Manager:   manager@demo.ph / Manager123!');
   console.log('  Employee:  jane@demo.ph / Employee123!   (kiosk PIN for all demo staff: 1234)');

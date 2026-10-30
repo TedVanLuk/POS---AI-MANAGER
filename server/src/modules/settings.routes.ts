@@ -44,7 +44,8 @@ export default async function settingsRoutes(app: FastifyInstance) {
     const p = userOf(req);
     const body = parse(z.object({
       name: z.string().min(1).optional(), timezone: z.string().optional(), payroll: payrollSettingsSchema.optional(), reason: z.string().optional(),
-      departments: z.array(z.object({ name: z.string().trim().min(1).max(60), group: z.string().trim().min(1).max(60), dailyRate: z.number().min(0), shiftStart: hm, shiftEnd: hm })).max(100).optional(),
+      departments: z.array(z.object({ name: z.string().trim().min(1).max(60), group: z.string().trim().min(1).max(60), dailyRate: z.number().min(0), shiftStart: hm, shiftEnd: hm, paySheet: z.string().trim().max(80).nullish(), nightDiffHours: z.number().min(0).max(12).nullish() })).max(100).optional(),
+      paySheets: z.array(z.string().trim().min(1).max(80)).max(30).optional(),
     }), req.body);
     const t = await getTenant(p.tenantId);
     const settings = {
@@ -54,6 +55,7 @@ export default async function settingsRoutes(app: FastifyInstance) {
         components: { ...t.settings.payroll.components, ...(body.payroll?.components ?? {}) },
       },
       departments: body.departments ?? t.settings.departments ?? [],
+      paySheets: body.paySheets ?? t.settings.paySheets ?? [],
     };
     await db.update(schema.tenants).set({ name: body.name ?? t.name, timezone: body.timezone ?? t.timezone, settings }).where(eq(schema.tenants.id, p.tenantId));
     await audit(p, { entity: 'tenant', entityId: p.tenantId, action: 'update_settings', before: t.settings, after: settings, reason: body.reason }, db, req.ip);

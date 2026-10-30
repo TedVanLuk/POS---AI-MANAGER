@@ -7,8 +7,8 @@ interface PayrollSettings {
   frequency: string; workDaysPerYear: number; hoursPerDay: number; statutorySchedule: string;
   components: Record<string, boolean>; nightDiffStart: string; nightDiffEnd: string; nightDiffRate: number; minOvertimeMinutes: number;
 }
-interface Department { name: string; group: string; dailyRate: number; shiftStart: string; shiftEnd: string }
-interface SettingsRes { name: string; timezone: string; settings: { payroll: PayrollSettings; departments?: Department[] } }
+interface Department { name: string; group: string; dailyRate: number; shiftStart: string; shiftEnd: string; paySheet?: string | null; nightDiffHours?: number | null }
+interface SettingsRes { name: string; timezone: string; settings: { payroll: PayrollSettings; departments?: Department[]; paySheets?: string[] } }
 interface Device { id: string; name: string; driver: string; active: boolean; lastSeenAt: string | null; createdAt: string }
 interface Holiday { id: string; date: string; name: string; type: string }
 interface Schedule { id: string; name: string; startTime: string; endTime: string; breakMinutes: number; graceMinutes: number; restDays: number[] }
@@ -46,6 +46,7 @@ function DepartmentsTab() {
   const [rows, setRows] = useState<Department[] | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const list = rows ?? s.data?.settings.departments ?? [];
+  const sheets = s.data?.settings.paySheets ?? [];
   const set = (i: number, patch: Partial<Department>) => setRows(list.map((d, j) => (j === i ? { ...d, ...patch } : d)));
   const save = async () => {
     try { await api.patch('/api/settings', { departments: list.filter((d) => d.name.trim()) }); await s.reload(); setRows(null); setMsg('Saved — schedule costs and projections use the new rates'); }
@@ -56,7 +57,7 @@ function DepartmentsTab() {
     <div className="card table-wrap">
       <div className="card-head"><h2>Departments & daily rates</h2><span className="spacer" />{msg && <span className="muted small">{msg}</span>}</div>
       <table>
-        <thead><tr><th>Department</th><th>Group</th><th className="num">Daily rate (₱)</th><th>Shift start</th><th>Shift end</th><th /></tr></thead>
+        <thead><tr><th>Department</th><th>Group</th><th className="num">Daily rate (₱)</th><th>Shift start</th><th>Shift end</th><th>Weekly payroll sheet</th><th className="num">ND hours / day</th><th /></tr></thead>
         <tbody>
           {list.map((d, i) => (
             <tr key={i}>
@@ -65,6 +66,8 @@ function DepartmentsTab() {
               <td className="num"><input type="number" min={0} value={d.dailyRate} onChange={(e) => set(i, { dailyRate: Number(e.target.value) })} style={{ width: 110, textAlign: 'right' }} aria-label={`${d.name} daily rate`} /></td>
               <td><input type="time" value={d.shiftStart} onChange={(e) => set(i, { shiftStart: e.target.value })} aria-label="Shift start" /></td>
               <td><input type="time" value={d.shiftEnd} onChange={(e) => set(i, { shiftEnd: e.target.value })} aria-label="Shift end" /></td>
+              <td><select value={d.paySheet ?? ''} onChange={(e) => set(i, { paySheet: e.target.value || null })} aria-label={`${d.name} payroll sheet`}><option value="">— Not on weekly payroll —</option>{sheets.map((x) => <option key={x}>{x}</option>)}</select></td>
+              <td className="num"><input type="number" min={0} max={12} step={0.5} value={d.nightDiffHours ?? 7} onChange={(e) => set(i, { nightDiffHours: Number(e.target.value) })} style={{ width: 70, textAlign: 'right' }} aria-label={`${d.name} night differential hours per day`} /></td>
               <td><button className="btn sm danger" onClick={() => setRows(list.filter((_, j) => j !== i))}>Remove</button></td>
             </tr>
           ))}

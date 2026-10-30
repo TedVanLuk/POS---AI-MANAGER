@@ -10,6 +10,7 @@ import EmployeeDetail from './admin/EmployeeDetail';
 import Attendance from './admin/Attendance';
 import PayrollRuns from './admin/PayrollRuns';
 import PayrollRun from './admin/PayrollRun';
+import PaySheet from './admin/PaySheet';
 import ServerEfficiency from './admin/ServersTracker';
 import Performance from './admin/Performance';
 import EmployeePerformance from './admin/EmployeePerformance';
@@ -49,6 +50,7 @@ export default function App() {
         <Route path="employees/:id" element={<EmployeeDetail />} />
         <Route path="attendance" element={<Attendance />} />
         <Route path="payroll" element={<PayrollRuns />} />
+        <Route path="payroll/sheets/:id" element={<PaySheet />} />
         <Route path="payroll/:id" element={<PayrollRun />} />
         <Route path="penalties" element={<Navigate to="/admin/payroll?tab=penalties" replace />} />
         <Route path="efficiency" element={<ServerEfficiency />} />

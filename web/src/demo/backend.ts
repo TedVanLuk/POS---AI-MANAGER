@@ -10,7 +10,8 @@ import { evaluatePenalties } from '../../../server/src/penalties/engine';
 import { evaluateTeam, type PersonInput } from '../../../server/src/stats/performance';
 import { codeOn, isOnDuty, restDaysFromPattern, rosterWeek, type RosterEntry } from '../../../server/src/stats/roster';
 import { monthWeeks, rankMetric, trackerTotals, TRACKER_METRICS, type StatRow } from '../../../server/src/stats/tracker';
-import { MDC_DEPARTMENTS, MDC_STAFF, MDC_TRACKER } from '../../../server/src/db/mdc-data';
+import { MDC_DEPARTMENTS, MDC_PAYROLL_OCT_5_11, MDC_STAFF, MDC_TRACKER } from '../../../server/src/db/mdc-data';
+import { applyRowChanges, buildSheetRows, computeSheet, EDITABLE_FIELDS, nameLinker, periodLabel, rowsFromPaper, type SheetRow, type SheetSource } from '../../../server/src/payroll/sheet';
 import { deriveRates } from '../../../server/src/payroll/engine';
 import { currentCutoff, dailyTrend, overtimeLeaders } from '../../../server/src/stats/dashboard';
 import { tablesFor } from '../../../server/src/payroll/statutory-ph';
@@ -57,11 +58,12 @@ interface Store {
   schedules: Schedule[]; employees: Employee[]; users: User[]; devices: Device[]; templates: Template[];
   punches: Punch[]; holidays: Holiday[]; runs: Run[]; payslips: Payslip[]; lines: Line[]; rules: Rule[];
   penalties: Penalty[]; slips: Slip[]; notes: Note[]; audit: Audit[];
-  roster: RosterEntry[]; stats: StatRow[]; reviews: Review[];
+  roster: RosterEntry[]; stats: StatRow[]; reviews: Review[]; paySheets: PaySheet[];
 }
+interface PaySheet { id: string; periodStart: string; periodEnd: string; status: 'draft' | 'final'; cashReceived: number; rows: SheetRow[]; notes: string | null; createdBy: string; finalizedBy: string | null; finalizedAt: string | null; createdAt: string; updatedAt: string }
 
 const STORE_KEY = 'aim.demo.store.v1';
-const STORE_VERSION = 4;
+const STORE_VERSION = 5;
 export const DEMO_DEVICE_TOKEN = 'demo-kiosk-token-change-me-0000000001';
 const TZ = 'Asia/Manila';
 
@@ -569,6 +571,96 @@ on('POST', '/api/employees/:id/fingerprints', (c, p, _q, b) => {
 });
 on('DELETE', '/api/employees/:id/fingerprints', (c, p) => { requireUser(c, ADMIN); const s = store(); const n = s.templates.filter((t) => t.employeeId === p.id).length; s.templates = s.templates.filter((t) => t.employeeId !== p.id); audit(c, { entity: 'employee', entityId: p.id, action: 'fingerprint_delete_all', after: { count: n } }); return { deleted: n }; });
 
+// weekly payroll sheets (MDC format)
+const findSheet = (id: string) => store().paySheets.find((x) => x.id === id) ?? notFound('Payroll sheet');
+const periodDaysOf = (a: string, b: string) => DateTime.fromISO(b).diff(DateTime.fromISO(a), 'days').days + 1;
+function sheetView(x: PaySheet) {
+  const st = settings();
+  return {
+    id: x.id, company: store().tenant.name, periodStart: x.periodStart, periodEnd: x.periodEnd, label: periodLabel(x.periodStart, x.periodEnd),
+    status: x.status, cashReceived: x.cashReceived, notes: x.notes, finalizedAt: x.finalizedAt, finalizedByName: x.finalizedBy ? userName(x.finalizedBy) : null, updatedAt: x.updatedAt,
+    sheetOrder: st.paySheets ?? [], sections: (st.departments ?? []).filter((d) => d.paySheet).map((d) => ({ name: d.name, sheet: d.paySheet!, ndPerDay: d.nightDiffHours ?? 7 })),
+    ...computeSheet(x.rows, { cashReceived: x.cashReceived, periodDays: periodDaysOf(x.periodStart, x.periodEnd), sheetOrder: st.paySheets }),
+  };
+}
+on('GET', '/api/pay-sheets', (c) => {
+  requireUser(c, STAFF);
+  return [...store().paySheets].sort((a, b) => b.periodStart.localeCompare(a.periodStart)).map((x) => {
+    const r = computeSheet(x.rows, { cashReceived: x.cashReceived, periodDays: 7 });
+    return { id: x.id, periodStart: x.periodStart, periodEnd: x.periodEnd, label: periodLabel(x.periodStart, x.periodEnd), status: x.status, people: r.totals.people, amount: r.summary.amount, paid: r.summary.paid, balance: r.summary.balance };
+  });
+});
+on('GET', '/api/pay-sheets/:id', (c, p) => { requireUser(c, STAFF); return sheetView(findSheet(p.id)); });
+on('POST', '/api/pay-sheets', (c, _p, _q, b) => {
+  const u = requireUser(c, ADMIN);
+  const ps = String(b.periodStart ?? ''), pe = String(b.periodEnd ?? '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ps) || !/^\d{4}-\d{2}-\d{2}$/.test(pe)) fail(400, 'Choose the period');
+  if (pe < ps) fail(400, 'The period ends before it starts');
+  if (periodDaysOf(ps, pe) > 32) fail(400, 'A payroll sheet covers at most 31 days');
+  const source = (b.source as string) ?? 'attendance';
+  const s = store(); const st = settings();
+  let rows: SheetRow[] = []; let excluded: string[] = [];
+  if (source !== 'blank') {
+    const emps = s.employees.filter((e) => e.active);
+    const days: string[] = [];
+    for (let d = DateTime.fromISO(ps); d <= DateTime.fromISO(pe); d = d.plus({ days: 1 })) days.push(d.toISODate()!);
+    const { records } = dayRecords(ps, pe, emps.map((e) => e.id));
+    const over = new Map(s.roster.map((r) => [`${r.employeeId}|${r.date}`, r.code]));
+    const sources: SheetSource[] = emps.map((e) => {
+      const t = summarize(records.get(e.id) ?? []);
+      const pens = s.penalties.filter((x) => x.employeeId === e.id && x.status === 'approved' && x.date >= ps && x.date <= pe);
+      return {
+        id: e.id, name: name(e), department: e.department, dailyRate: deriveRates(e, st.payroll).daily,
+        days: source === 'schedule' ? days.filter((d) => isOnDuty(codeOn(e.weekPattern ?? [], over, e.id, d))).length : t.daysPresent,
+        otMinutes: source === 'schedule' ? 0 : t.overtimeMinutes,
+        penalties: pens.reduce((a, x) => a + x.amount, 0), penaltyNote: pens.length ? pens.map((x) => `${x.date} ${x.reason}`).join('; ') : null,
+      };
+    });
+    ({ rows, excluded } = buildSheetRows(sources, st.departments ?? [], st.paySheets ?? [], uid));
+  }
+  const x: PaySheet = { id: uid(), periodStart: ps, periodEnd: pe, status: 'draft', cashReceived: 0, rows, notes: null, createdBy: u.id, finalizedBy: null, finalizedAt: null, createdAt: nowIso(), updatedAt: nowIso() };
+  s.paySheets.push(x);
+  audit(c, { entity: 'pay_sheet', entityId: x.id, action: 'create', after: { period: [ps, pe], source, rows: rows.length } });
+  return { id: x.id, rows: rows.length, excluded };
+});
+on('PUT', '/api/pay-sheets/:id/rows', (c, p, _q, b) => {
+  const u = requireUser(c, STAFF);
+  const x = findSheet(p.id);
+  const changes = (b.changes as Record<string, unknown>[] | undefined) ?? [];
+  const remove = (b.remove as string[] | undefined) ?? [];
+  const touchesMoney = remove.length || changes.some((ch) => !ch.id || EDITABLE_FIELDS.some((f) => f !== 'paid' && f !== 'remarks' && f in ch));
+  if (touchesMoney && !ADMIN.includes(u.role)) fail(400, 'Only an owner or admin can change payroll amounts');
+  for (const ch of changes) for (const f of ['days', 'dailyRate', 'otHours', 'ndHours', 'deductions'] as const) if (f in ch && (typeof ch[f] !== 'number' || !Number.isFinite(ch[f] as number) || (ch[f] as number) < 0)) fail(400, 'Amounts must be zero or more');
+  const reason = typeof b.reason === 'string' && b.reason.trim() ? b.reason.trim() : null;
+  try { x.rows = applyRowChanges(x.rows, { changes, remove }, { id: u.id, name: u.name }, { reason, now: nowIso(), newId: uid, locked: x.status === 'final' }); }
+  catch (e) { fail(400, (e as Error).message); }
+  x.updatedAt = nowIso();
+  audit(c, { entity: 'pay_sheet', entityId: x.id, action: 'edit_rows', after: { changes, remove }, reason });
+  return sheetView(x);
+});
+on('PATCH', '/api/pay-sheets/:id', (c, p, _q, b) => {
+  const u = requireUser(c, ADMIN);
+  const x = findSheet(p.id);
+  const reason = typeof b.reason === 'string' && b.reason.trim() ? b.reason.trim() : null;
+  if (b.status === 'draft' && x.status === 'final' && !reason) fail(400, 'Give a reason for reopening a final payroll');
+  const before = { status: x.status, cashReceived: x.cashReceived };
+  if (b.cashReceived !== undefined) { const n = Number(b.cashReceived); if (!Number.isFinite(n) || n < 0) fail(400, 'Enter the cash received'); x.cashReceived = n; }
+  if (b.notes !== undefined) x.notes = (b.notes as string) || null;
+  if (b.status === 'final' && x.status !== 'final') Object.assign(x, { status: 'final', finalizedBy: u.id, finalizedAt: nowIso() });
+  if (b.status === 'draft' && x.status !== 'draft') Object.assign(x, { status: 'draft', finalizedBy: null, finalizedAt: null });
+  x.updatedAt = nowIso();
+  audit(c, { entity: 'pay_sheet', entityId: x.id, action: b.status ? (b.status === 'final' ? 'finalize' : 'reopen') : 'update', before, after: b, reason });
+  return sheetView(x);
+});
+on('DELETE', '/api/pay-sheets/:id', (c, p) => {
+  requireUser(c, ADMIN);
+  const x = findSheet(p.id);
+  if (x.status === 'final') fail(400, 'Reopen a final payroll before deleting it');
+  store().paySheets = store().paySheets.filter((y) => y !== x);
+  audit(c, { entity: 'pay_sheet', entityId: x.id, action: 'delete', before: { period: [x.periodStart, x.periodEnd], rows: x.rows.length } });
+  return { ok: true };
+});
+
 // settings, branches, schedules, holidays, devices, audit
 on('GET', '/api/settings', (c) => { requireUser(c, STAFF); const t = store().tenant; return { name: t.name, timezone: t.timezone, currency: t.currency, settings: settings() }; });
 on('PATCH', '/api/settings', (c, _p, _q, b) => {
@@ -576,7 +668,7 @@ on('PATCH', '/api/settings', (c, _p, _q, b) => {
   const t = store().tenant;
   const before = settings();
   const payroll = (b.payroll ?? {}) as Partial<TenantSettings['payroll']>;
-  t.settings = { payroll: { ...before.payroll, ...payroll, components: { ...before.payroll.components, ...(payroll.components ?? {}) } }, departments: (b.departments as TenantSettings['departments']) ?? before.departments ?? [] };
+  t.settings = { payroll: { ...before.payroll, ...payroll, components: { ...before.payroll.components, ...(payroll.components ?? {}) } }, departments: (b.departments as TenantSettings['departments']) ?? before.departments ?? [], paySheets: (b.paySheets as string[]) ?? before.paySheets ?? [] };
   audit(c, { entity: 'tenant', entityId: t.id, action: 'update_settings', before, after: t.settings });
   return { ok: true, settings: t.settings };
 });
@@ -885,10 +977,10 @@ function seed(): Store {
   const rand = () => ((rnd = (rnd * 1664525 + 1013904223) % 2 ** 32) / 2 ** 32);
   const s: Store = {
     version: STORE_VERSION,
-    tenant: { id: uid(), name: 'Mega Dance Center', timezone: TZ, currency: 'PHP', settings: { ...structuredClone(DEFAULT_SETTINGS), departments: structuredClone(MDC_DEPARTMENTS) } },
+    tenant: { id: uid(), name: 'Mega Dance Center', timezone: TZ, currency: 'PHP', settings: { ...structuredClone(DEFAULT_SETTINGS), departments: structuredClone(MDC_DEPARTMENTS), paySheets: [...MDC_PAYROLL_OCT_5_11.sheets] } },
     branches: [{ id: uid(), name: 'MDC Main', address: 'Mega Dance Center' }],
     schedules: [], employees: [], users: [], devices: [], templates: [], punches: [], holidays: [], runs: [], payslips: [], lines: [], rules: [], penalties: [], slips: [], notes: [], audit: [],
-    roster: [], stats: [], reviews: [],
+    roster: [], stats: [], reviews: [], paySheets: [],
   };
   db = s;
   const branchId = s.branches[0].id;
@@ -981,5 +1073,10 @@ function seed(): Store {
   run.status = 'approved'; run.approvedBy = owner.id; run.approvedAt = created;
   audit(ctx, { entity: 'payroll_run', entityId: run.id, action: 'approve', before: { status: 'review' }, after: { status: 'approved' } });
   generatePenalties(prevEnd.plus({ days: 1 }).toISODate()!, t0.toISODate()!);
+
+  // The client's Oct. 5-11 weekly payroll, row for row.
+  const link = nameLinker(s.employees.map((e) => ({ id: e.id, name: name(e), department: e.department })));
+  const P = MDC_PAYROLL_OCT_5_11;
+  s.paySheets.push({ id: uid(), periodStart: P.periodStart, periodEnd: P.periodEnd, status: 'final', cashReceived: P.cashReceived, rows: rowsFromPaper(P.rows, uid, link), notes: 'Imported from the Oct. 5-11 payroll PDF', createdBy: owner.id, finalizedBy: owner.id, finalizedAt: '2026-10-12T04:00:00.000Z', createdAt: created, updatedAt: created });
   return s;
 }

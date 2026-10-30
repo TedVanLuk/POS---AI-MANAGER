@@ -399,6 +399,54 @@ button.rc:hover { outline: 2px solid var(--text-3); outline-offset: 1px; }
 .rank-cols li b { float: right; font-variant-numeric: tabular-nums; }
 .bad-text { color: var(--critical); }
 
+/* ---------- Weekly payroll sheet ---------- */
+.paysheet { --paid: #f6e05e; --paid-ink: #1d1a05; }
+:root[data-theme="dark"] .paysheet { --paid: #8a7a1c; --paid-ink: #fff8cc; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .paysheet { --paid: #8a7a1c; --paid-ink: #fff8cc; } }
+.ps-company { font-size: .72rem; font-weight: 800; letter-spacing: .1em; color: var(--text-3); }
+.paysheet h1 { font-size: 1.35rem; }
+.ps-card { padding: 8px 10px; }
+.ps th, .ps td { padding: .34rem .45rem; font-size: .84rem; font-variant-numeric: tabular-nums; }
+.ps th { font-size: .64rem; white-space: normal; vertical-align: bottom; line-height: 1.25; }
+.ps th.c, .ps td.c { text-align: center; }
+.ps tr.grp th { border-bottom: none; padding-bottom: 0; color: var(--text-2); font-size: .68rem; }
+.ps tr.grp th.c { border-bottom: 2px solid var(--border-strong); }
+.ps tr.sec td { background: var(--surface-2); font-weight: 800; font-size: .74rem; letter-spacing: .06em; padding-top: .45rem; padding-bottom: .45rem; }
+.ps td.nm { white-space: nowrap; }
+.ps td.rm { min-width: 120px; white-space: normal; }
+.ps td.net.paid b { background: var(--paid); color: var(--paid-ink); padding: .1rem .35rem; border-radius: 4px; }
+.ps tr.changed td { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.ps tr.warn td.nm { color: var(--warning-text); }
+.ps tfoot td { border-top: 2px solid var(--border-strong); font-weight: 700; }
+.ps-in { padding: .22rem .3rem; border-radius: 7px; font-size: .82rem; text-align: right; }
+.ps-in.w-s { width: 58px; text-align: center; }
+.ps-in.w-m { width: 84px; }
+.ps-in.w-l { width: 100%; min-width: 120px; text-align: left; }
+.link-btn { background: none; border: none; padding: 0; font: inherit; font-weight: 600; color: inherit; cursor: pointer; text-align: left; }
+.link-btn:hover { text-decoration: underline; }
+.warn-ico { margin-left: .35rem; color: var(--warning-text); cursor: help; }
+.hist-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-left: .4rem; vertical-align: middle; }
+.save-bar { position: sticky; bottom: 12px; z-index: 30; display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-top: 12px; padding: .6rem .8rem; border-radius: 16px; background: var(--invert-bg); color: var(--invert-fg); box-shadow: 0 10px 30px rgba(0,0,0,.3); }
+.save-bar input { flex: 1; min-width: 180px; background: color-mix(in srgb, var(--invert-fg) 12%, transparent); color: var(--invert-fg); border-color: transparent; }
+.save-bar input::placeholder { color: color-mix(in srgb, var(--invert-fg) 60%, transparent); }
+.save-bar .btn { background: transparent; color: var(--invert-fg); border-color: color-mix(in srgb, var(--invert-fg) 40%, transparent); }
+.save-bar .btn.primary { background: var(--invert-fg); color: var(--invert-bg); }
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 60; background: var(--invert-bg); color: var(--invert-fg); padding: .5rem 1rem; border-radius: 999px; font-weight: 600; font-size: .85rem; animation: toast 3s forwards; }
+@keyframes toast { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+.ps-summary { display: grid; gap: 14px; grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr); align-items: start; }
+@media (max-width: 960px) { .ps-summary { grid-template-columns: 1fr; } }
+.ps-summary tfoot td { border-top: 2px solid var(--border-strong); }
+.cash-grid { display: grid; grid-template-columns: 1fr auto; gap: .6rem 1rem; align-items: center; margin: .4rem 0 .8rem; font-variant-numeric: tabular-nums; }
+.cash-grid .big { font-size: 1.05rem; font-weight: 800; padding-top: .5rem; border-top: 1px solid var(--border); }
+.hl { background: color-mix(in srgb, #f6e05e 55%, transparent); padding: .1rem .4rem; border-radius: 4px; }
+ul.hist { list-style: none; padding: 0; margin: 0; display: grid; gap: .55rem; max-height: 240px; overflow: auto; }
+ul.hist li { border-left: 3px solid var(--border-strong); padding-left: .6rem; }
+fieldset.choice { border: none; padding: 0; margin: 0; display: grid; gap: .45rem; }
+.choice-row { display: flex; gap: .6rem; align-items: flex-start; padding: .55rem .7rem; border: 1px solid var(--border); border-radius: 12px; cursor: pointer; }
+.choice-row:has(input:checked) { border-color: var(--text-2); background: var(--surface-2); }
+.choice-row > span { display: grid; gap: .1rem; }
+.choice-row input { margin-top: .2rem; }
+
 /* ---------- Employees List ---------- */
 .emp-list td { vertical-align: top; }
 .emp-list .contact { white-space: normal; min-width: 170px; max-width: 240px; }

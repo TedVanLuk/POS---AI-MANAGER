@@ -1,3 +1,4 @@
+import type { SheetRow } from '../payroll/sheet.js';
 import {
   pgTable, uuid, text, timestamp, integer, boolean, numeric, jsonb, date, pgEnum, uniqueIndex, index, time,
 } from 'drizzle-orm/pg-core';
@@ -50,7 +51,9 @@ export type TenantSettings = {
     minOvertimeMinutes: number; // OT counted only when >= this
   };
   /** Departments with their group (e.g. Operational staff), planning daily rate and usual shift. */
-  departments?: { name: string; group: string; dailyRate: number; shiftStart: string; shiftEnd: string }[];
+  departments?: { name: string; group: string; dailyRate: number; shiftStart: string; shiftEnd: string; paySheet?: string | null; nightDiffHours?: number | null }[];
+  /** Weekly payroll sheets in print order (e.g. "Admin, Cashiers, Bouncers", "Servers", …). */
+  paySheets?: string[];
 };
 
 export const tenants = pgTable('tenants', {
@@ -381,3 +384,20 @@ export const performanceReviews = pgTable('performance_reviews', {
   managerName: text('manager_name'),
   createdAt: createdAt(),
 });
+
+/** Weekly payroll sheet (MDC format): rows are kept as typed on the form, with per-row edit history. */
+export const paySheets = pgTable('pay_sheets', {
+  id: id(),
+  tenantId: tenantId(),
+  periodStart: date('period_start').notNull(),
+  periodEnd: date('period_end').notNull(),
+  status: text('status').$type<'draft' | 'final'>().notNull().default('draft'),
+  cashReceived: money('cash_received').notNull().default(0),
+  rows: jsonb('rows').$type<SheetRow[]>().notNull().default([]),
+  notes: text('notes'),
+  createdBy: uuid('created_by').references(() => users.id),
+  finalizedBy: uuid('finalized_by').references(() => users.id),
+  finalizedAt: timestamp('finalized_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('pay_sheets_tenant_period').on(t.tenantId, t.periodStart)]);
