@@ -14,12 +14,12 @@ export default function Performance() {
         <select value={days} onChange={(e) => setDays(Number(e.target.value))}>{[14, 30, 60, 90].map((d) => <option key={d} value={d}>Last {d} days</option>)}</select>
       </div>
       <p className="muted small">
-        {Object.entries(ATTR_LABELS).map(([k, v]) => `${k} = ${v}`).join(' · ')}. Ratings 1–99 compare each person to the team median (SPD/HUS/SAL come from order slips, so only servers have them). Add a photo on each employee's page.
+        {Object.entries(ATTR_LABELS).map(([k, v]) => `${k} = ${v}`).join(' · ')}. Ratings 1–99 compare each person to the team median (SPD/HUS/SAL come from order slips, so only servers have them). Click a card for the full performance summary and 5-star reviews. Add a photo on each employee's page.
         Tiers: Legend ≥ 90 · Gold ≥ 80 · Silver ≥ 65 · Bronze.
       </p>
       {cards.error && <div className="error">{cards.error}</div>}
       <div className="cards-grid">
-        {cards.data?.map((c) => <EmployeeCard key={c.employeeId} card={c} onClick={() => nav(`/admin/employees/${c.employeeId}`)} />)}
+        {cards.data?.map((c) => <EmployeeCard key={c.employeeId} card={c} onClick={() => nav(`/admin/performance/${c.employeeId}`)} />)}
       </div>
     </>
   );

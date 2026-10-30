@@ -16,14 +16,13 @@ export default function AdminLayout() {
       ['/admin/ai', 'AI Manager', 'spark', isAdmin(me?.role)],
     ] },
     { title: 'People', links: [
-      ['/admin/employees', 'Employees', 'users', true],
+      ['/admin/employees', 'Employees List', 'users', true],
       ['/admin/performance', 'Employee cards', 'trophy', true],
       ['/admin/schedules', 'Schedules', 'calendar', true],
       ['/admin/attendance', 'Attendance', 'clock', true],
     ] },
     { title: 'Pay', links: [
       ['/admin/payroll', 'Payroll', 'wallet', true],
-      ['/admin/penalties', 'Penalties', 'scale', true],
       ['/admin/efficiency', 'Server efficiency', 'receipt', true],
     ] },
     { title: 'System', links: [
@@ -130,7 +129,7 @@ function TopBar() {
         <button className="icon-btn" onClick={toggle} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>
           <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
         </button>
-        <button className="icon-btn" onClick={() => nav('/admin/penalties')} aria-label={`${pendingCount} penalties waiting for a decision`} title="Penalties waiting for a decision">
+        <button className="icon-btn" onClick={() => nav('/admin/payroll?tab=penalties')} aria-label={`${pendingCount} penalties waiting for a decision`} title="Penalties waiting for a decision">
           <Icon name="bell" />{pendingCount > 0 && <span className="dot">{pendingCount > 99 ? '99+' : pendingCount}</span>}
         </button>
         <div ref={menuRef} style={{ position: 'relative' }}>

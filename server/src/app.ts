@@ -20,7 +20,9 @@ import payrollRoutes from './modules/payroll.routes.js';
 import penaltyRoutes from './modules/penalties.routes.js';
 import settingsRoutes from './modules/settings.routes.js';
 import statsRoutes from './modules/stats.routes.js';
-import workforceRoutes from './modules/workforce.routes.js';
+import rosterRoutes from './modules/roster.routes.js';
+import trackerRoutes from './modules/tracker.routes.js';
+import reviewRoutes from './modules/reviews.routes.js';
 
 export async function buildApp(opts: { logger?: boolean } = {}) {
   const app = Fastify({ logger: opts.logger ?? true, trustProxy: true, bodyLimit: 5 * 1024 * 1024 });
@@ -37,7 +39,7 @@ export async function buildApp(opts: { logger?: boolean } = {}) {
   });
 
   app.get('/api/health', async () => ({ ok: true }));
-  for (const routes of [authRoutes, employeeRoutes, settingsRoutes, kioskRoutes, attendanceRoutes, payrollRoutes, penaltyRoutes, efficiencyRoutes, notesRoutes, statsRoutes, workforceRoutes, meRoutes, aiRoutes]) {
+  for (const routes of [authRoutes, employeeRoutes, settingsRoutes, kioskRoutes, attendanceRoutes, payrollRoutes, penaltyRoutes, efficiencyRoutes, notesRoutes, statsRoutes, rosterRoutes, trackerRoutes, reviewRoutes, meRoutes, aiRoutes]) {
     await app.register(routes);
   }
 

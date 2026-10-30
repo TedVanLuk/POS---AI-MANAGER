@@ -42,7 +42,7 @@ cp server/.env.example server/.env
 #   set JWT_SECRET and BIOMETRIC_KEY (openssl rand -base64 32); optionally ANTHROPIC_API_KEY for AI chat
 
 # 3. Migrate + demo data
-npm run db:seed              # runs migrations, then seeds "Demo Restaurant PH"
+npm run db:seed              # runs migrations, then seeds "Mega Dance Center" (128 staff from the MDC schedule, October servers tracker)
 
 # 4. Develop
 npm run dev                  # API on :4000, web on :5173 (proxied)
@@ -54,7 +54,7 @@ Demo logins (from the seed):
 |---|---|
 | Owner/admin | `admin@demo.ph` / `Admin123!` |
 | Manager | `manager@demo.ph` / `Manager123!` |
-| Employee | `juan@demo.ph` / `Employee123!` |
+| Employee | `jane@demo.ph` / `Employee123!` |
 | Kiosk device token | `demo-kiosk-token-change-me-0000000001` (simulator driver; staff PIN `1234`) |
 
 ## Tests

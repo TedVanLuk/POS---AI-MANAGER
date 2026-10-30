@@ -37,5 +37,6 @@ export function withDefaults(s: Partial<TenantSettings> | null | undefined): Ten
       ...(s?.payroll ?? {}),
       components: { ...DEFAULT_SETTINGS.payroll.components, ...(s?.payroll?.components ?? {}) },
     },
+    departments: s?.departments ?? [],
   };
 }

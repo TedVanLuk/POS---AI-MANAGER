@@ -1,9 +1,10 @@
-import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { DateTime } from 'luxon';
 import { db, schema } from '../db/index.js';
 import { summarize } from '../attendance/engine.js';
 import { getDayRecords, getTenant } from '../attendance/service.js';
-import { computeCard, median } from './engine.js';
+import { evaluateTeam } from './performance.js';
+import { codeOn } from './roster.js';
 
 /** Per-server order-slip metrics over a date range. */
 export async function efficiencyMetrics(tenantId: string, from: string, to: string, employeeIds?: string[]) {
@@ -81,54 +82,55 @@ export async function serialGaps(tenantId: string, from: string, to: string) {
   return gaps;
 }
 
-/** Fighter cards for the team (or one employee) over the last N days. */
-export async function fighterCards(tenantId: string, days = 30, employeeId?: string) {
-  const tenant = await getTenant(tenantId);
-  const today = DateTime.now().setZone(tenant.timezone);
-  const from = today.minus({ days: days - 1 }).toISODate()!;
-  const to = today.toISODate()!;
+/** Employee cards for the team (or one employee): performance over [from, to], scored together. */
+export async function employeeCards(tenantId: string, from: string, to: string, employeeId?: string) {
   const { employees, records } = await getDayRecords(tenantId, from, to);
-  const eff = await efficiencyMetrics(tenantId, from, to);
-  const team = {
-    slipsPerHour: median(eff.map((e) => e.slipsPerHour)),
-    salesPerHour: median(eff.map((e) => e.salesPerHour)),
-    avgServiceMinutes: median(eff.map((e) => e.avgServiceMinutes ?? 0)),
-  };
-  const penalties = await db.select({ employeeId: schema.penalties.employeeId, n: sql<number>`count(*)::int` }).from(schema.penalties)
-    .where(and(eq(schema.penalties.tenantId, tenantId), eq(schema.penalties.status, 'approved'), gte(schema.penalties.date, from)))
-    .groupBy(schema.penalties.employeeId);
-  const notes = await db.select({
-    employeeId: schema.managementNotes.employeeId,
-    rating: sql<number>`coalesce(sum(${schema.managementNotes.rating}),0)::int`,
-    warnings: sql<number>`count(*) filter (where ${schema.managementNotes.category} in ('warning','incident'))::int`,
-  }).from(schema.managementNotes)
-    .where(and(eq(schema.managementNotes.tenantId, tenantId), gte(schema.managementNotes.createdAt, today.minus({ days: 90 }).toJSDate())))
-    .groupBy(schema.managementNotes.employeeId);
-
+  const ids = employees.map((e) => e.id);
+  const [pens, notes, stats, reviews, entries] = await Promise.all([
+    db.select().from(schema.penalties).where(and(eq(schema.penalties.tenantId, tenantId), eq(schema.penalties.status, 'approved'), gte(schema.penalties.date, from), lte(schema.penalties.date, to))),
+    db.select().from(schema.managementNotes).where(and(eq(schema.managementNotes.tenantId, tenantId), gte(schema.managementNotes.createdAt, DateTime.fromISO(from).toJSDate()))),
+    db.select().from(schema.serverStats).where(and(eq(schema.serverStats.tenantId, tenantId), gte(schema.serverStats.date, from), lte(schema.serverStats.date, to))),
+    db.select().from(schema.performanceReviews).where(eq(schema.performanceReviews.tenantId, tenantId)).orderBy(desc(schema.performanceReviews.periodEnd)),
+    ids.length ? db.select().from(schema.rosterEntries).where(and(eq(schema.rosterEntries.tenantId, tenantId), gte(schema.rosterEntries.date, from), lte(schema.rosterEntries.date, to))) : Promise.resolve([]),
+  ]);
+  const overrides = new Map(entries.map((e) => [`${e.employeeId}|${e.date}`, e.code]));
+  const dates: string[] = [];
+  for (let d = DateTime.fromISO(from); d.toISODate()! <= to; d = d.plus({ days: 1 })) dates.push(d.toISODate()!);
+  const team = evaluateTeam(employees.map((e) => {
+    const mine = stats.filter((x) => x.employeeId === e.id);
+    const review = reviews.find((r) => r.employeeId === e.id);
+    const myNotes = notes.filter((n) => n.employeeId === e.id);
+    const myPens = pens.filter((p) => p.employeeId === e.id);
+    return {
+      id: e.id,
+      department: e.department ?? 'Unassigned',
+      attendance: summarize(records.get(e.id) ?? []),
+      leaveDays: dates.filter((d) => codeOn(e.weekPattern, overrides, e.id, d) === 'L').length,
+      approvedPenalties: myPens.length,
+      penaltyAmount: myPens.reduce((a, p) => a + p.amount, 0),
+      warnings: myNotes.filter((n) => n.category === 'warning' || n.category === 'incident').length,
+      compliments: myNotes.filter((n) => n.category === 'commendation').length,
+      sales: mine.length ? { orders: mine.reduce((a, x) => a + x.orders, 0), salesComms: mine.reduce((a, x) => a + x.salesComms, 0), lds: mine.reduce((a, x) => a + x.lds, 0), po: mine.reduce((a, x) => a + x.po, 0), daysWithData: mine.length } : null,
+      ratings: review?.ratings ?? null,
+    };
+  }));
   return employees
     .filter((e) => !employeeId || e.id === employeeId)
     .map((e) => {
-      const t = summarize(records.get(e.id) ?? []);
-      const ef = eff.find((x) => x.employeeId === e.id) ?? null;
-      const n = notes.find((x) => x.employeeId === e.id);
-      const card = computeCard({
-        ...t,
-        approvedPenalties: penalties.find((x) => x.employeeId === e.id)?.n ?? 0,
-        warningNotes: n?.warnings ?? 0,
-        noteRatingSum: n?.rating ?? 0,
-        efficiency: ef,
-      }, team);
+      const r = team.get(e.id)!;
       return {
-        employeeId: e.id,
-        name: `${e.firstName} ${e.lastName}`,
-        employeeNo: e.employeeNo,
-        position: e.position,
-        department: e.department,
-        photoUrl: e.photoUrl,
-        ...card,
-        period: { from, to, days },
-        raw: { ...t, efficiency: ef, approvedPenalties: penalties.find((x) => x.employeeId === e.id)?.n ?? 0, noteRating: n?.rating ?? 0, warnings: n?.warnings ?? 0 },
+        employeeId: e.id, name: `${e.firstName} ${e.lastName}`.trim(), employeeNo: e.employeeNo, position: e.position, department: e.department, photoUrl: e.photoUrl,
+        overall: Math.round(r.scores.overall), tier: r.scores.tier, attributes: r.attributes,
+        period: { from, to, days: dates.length },
+        performance: { scores: r.scores, rank: r.rank, input: r.input },
       };
     })
-    .sort((a, b) => b.overall - a.overall);
+    .sort((a, b) => b.performance.scores.overall - a.performance.scores.overall);
+}
+
+/** Back-compat helper: cards for the last N days. */
+export async function fighterCards(tenantId: string, days = 30, employeeId?: string) {
+  const tenant = await getTenant(tenantId);
+  const today = DateTime.now().setZone(tenant.timezone);
+  return employeeCards(tenantId, today.minus({ days: days - 1 }).toISODate()!, today.toISODate()!, employeeId);
 }

@@ -10,9 +10,9 @@ import EmployeeDetail from './admin/EmployeeDetail';
 import Attendance from './admin/Attendance';
 import PayrollRuns from './admin/PayrollRuns';
 import PayrollRun from './admin/PayrollRun';
-import Penalties from './admin/Penalties';
-import Efficiency from './admin/Efficiency';
+import ServerEfficiency from './admin/ServersTracker';
 import Performance from './admin/Performance';
+import EmployeePerformance from './admin/EmployeePerformance';
 import Schedules from './admin/Schedules';
 import AIChat from './admin/AIChat';
 import Settings from './admin/Settings';
@@ -50,9 +50,10 @@ export default function App() {
         <Route path="attendance" element={<Attendance />} />
         <Route path="payroll" element={<PayrollRuns />} />
         <Route path="payroll/:id" element={<PayrollRun />} />
-        <Route path="penalties" element={<Penalties />} />
-        <Route path="efficiency" element={<Efficiency />} />
+        <Route path="penalties" element={<Navigate to="/admin/payroll?tab=penalties" replace />} />
+        <Route path="efficiency" element={<ServerEfficiency />} />
         <Route path="performance" element={<Performance />} />
+        <Route path="performance/:id" element={<EmployeePerformance />} />
         <Route path="schedules" element={<Schedules />} />
         <Route path="ai" element={<AIChat />} />
         <Route path="settings" element={<Settings />} />

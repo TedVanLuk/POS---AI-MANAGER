@@ -7,9 +7,12 @@ import { DateTime } from 'luxon';
 import { buildDailyRecords, summarize, type DayRecord, type ScheduleInput } from '../../../server/src/attendance/engine';
 import { computePayslip, type LineOverride, type PayLine } from '../../../server/src/payroll/engine';
 import { evaluatePenalties } from '../../../server/src/penalties/engine';
-import { computeCard, median } from '../../../server/src/stats/engine';
+import { evaluateTeam, type PersonInput } from '../../../server/src/stats/performance';
+import { codeOn, isOnDuty, restDaysFromPattern, rosterWeek, type RosterEntry } from '../../../server/src/stats/roster';
+import { monthWeeks, rankMetric, trackerTotals, TRACKER_METRICS, type StatRow } from '../../../server/src/stats/tracker';
+import { MDC_DEPARTMENTS, MDC_STAFF, MDC_TRACKER } from '../../../server/src/db/mdc-data';
+import { deriveRates } from '../../../server/src/payroll/engine';
 import { currentCutoff, dailyTrend, overtimeLeaders } from '../../../server/src/stats/dashboard';
-import { weeklyPlan } from '../../../server/src/stats/workforce';
 import { tablesFor } from '../../../server/src/payroll/statutory-ph';
 import { DEFAULT_SETTINGS, withDefaults } from '../../../server/src/settings';
 import type { PenaltyRuleConfig, TenantSettings } from '../../../server/src/db/schema';
@@ -24,6 +27,13 @@ interface Employee {
   exemptions: { withholdingTax?: boolean; sss?: boolean; philhealth?: boolean; pagibig?: boolean };
   tin: string | null; sssNo: string | null; philhealthNo: string | null; pagibigNo: string | null;
   hireDate: string | null; active: boolean; pin: string | null; biometricConsentAt: string | null; photoUrl?: string | null; createdAt: string;
+  phone?: string | null; facebook?: string | null; address?: string | null; idType?: string | null; idNumber?: string | null;
+  idPhotoUrl?: string | null; idVerifiedAt?: string | null; idVerifiedBy?: string | null; weekPattern: string[];
+}
+interface Review {
+  id: string; employeeId: string; reviewerId: string; periodStart: string; periodEnd: string; ratings: Record<string, number>;
+  strengths: string[]; weaknesses: string[]; opportunities: string[]; threats: string[]; notes: string | null; assists: number;
+  employeeOfMonth: number; trainingCompleted: number; crossTrained: number; skillLevel: string | null; promotionReady: boolean; managerName: string | null; createdAt: string;
 }
 interface User { id: string; email: string; name: string; password: string; role: Role; employeeId: string | null }
 interface Device { id: string; name: string; driver: string; active: boolean; lastSeenAt: string | null; createdAt: string; token: string; branchId: string | null }
@@ -47,10 +57,11 @@ interface Store {
   schedules: Schedule[]; employees: Employee[]; users: User[]; devices: Device[]; templates: Template[];
   punches: Punch[]; holidays: Holiday[]; runs: Run[]; payslips: Payslip[]; lines: Line[]; rules: Rule[];
   penalties: Penalty[]; slips: Slip[]; notes: Note[]; audit: Audit[];
+  roster: RosterEntry[]; stats: StatRow[]; reviews: Review[];
 }
 
 const STORE_KEY = 'aim.demo.store.v1';
-const STORE_VERSION = 3;
+const STORE_VERSION = 4;
 export const DEMO_DEVICE_TOKEN = 'demo-kiosk-token-change-me-0000000001';
 const TZ = 'Asia/Manila';
 
@@ -100,7 +111,7 @@ function requireDevice(ctx: Ctx) {
 }
 const settings = () => withDefaults(store().tenant.settings);
 const findEmp = (id: string) => store().employees.find((e) => e.id === id) ?? notFound('Employee');
-const name = (e: Employee) => `${e.firstName} ${e.lastName}`;
+const name = (e: Employee) => `${e.firstName} ${e.lastName}`.trim();
 const publicEmployee = ({ pin, ...e }: Employee) => ({ ...e, hasPin: !!pin });
 const userName = (id: string | null) => (id ? store().users.find((u) => u.id === id)?.name ?? null : null);
 const zoneDay = (date: string) => DateTime.fromISO(date, { zone: TZ });
@@ -118,9 +129,12 @@ function dayRecords(from: string, to: string, employeeIds?: string[]) {
   const records = new Map<string, DayRecord[]>();
   for (const e of emps) {
     const sch = s.schedules.find((x) => x.id === e.scheduleId);
+    // Without a shift template: the department's usual hours and the person's usual week.
+    const dept = st.departments?.find((d) => d.name === e.department);
     records.set(e.id, buildDailyRecords({
       punches: punches.filter((p) => p.employeeId === e.id).map((p) => ({ type: p.type, at: new Date(p.punchedAt) })),
-      schedule: sch ? { startTime: sch.startTime, endTime: sch.endTime, breakMinutes: sch.breakMinutes, graceMinutes: sch.graceMinutes, restDays: sch.restDays } : DEFAULT_SCHEDULE,
+      schedule: sch ? { startTime: sch.startTime, endTime: sch.endTime, breakMinutes: sch.breakMinutes, graceMinutes: sch.graceMinutes, restDays: sch.restDays }
+        : { ...DEFAULT_SCHEDULE, ...(dept ? { startTime: dept.shiftStart, endTime: dept.shiftEnd } : {}), restDays: restDaysFromPattern(e.weekPattern) ?? DEFAULT_SCHEDULE.restDays },
       holidays, periodStart: from, periodEnd: to,
       options: { timezone: TZ, hoursPerDay: st.payroll.hoursPerDay, nightDiffStart: st.payroll.nightDiffStart, nightDiffEnd: st.payroll.nightDiffEnd, minOvertimeMinutes: st.payroll.minOvertimeMinutes, hireDate: e.hireDate },
     }));
@@ -263,24 +277,37 @@ function serialGaps(from: string, to: string) {
   }
   return out;
 }
-function fighterCards(days = 30, employeeId?: string) {
+/** Employee cards over [from, to], scored together with the shared performance model. */
+function employeeCards(from: string, to: string, employeeId?: string) {
   const s = store();
-  const t = DateTime.now().setZone(TZ);
-  const from = t.minus({ days: days - 1 }).toISODate()!, to = t.toISODate()!;
   const { employees, records } = dayRecords(from, to);
-  const eff = efficiency(from, to);
-  const team = { slipsPerHour: median(eff.map((e) => e.slipsPerHour)), salesPerHour: median(eff.map((e) => e.salesPerHour)), avgServiceMinutes: median(eff.map((e) => e.avgServiceMinutes ?? 0)) };
-  const since90 = t.minus({ days: 90 }).toMillis();
+  const overrides = new Map(s.roster.filter((r) => r.date >= from && r.date <= to).map((r) => [`${r.employeeId}|${r.date}`, r.code]));
+  const dates: string[] = [];
+  for (let d = DateTime.fromISO(from); d.toISODate()! <= to; d = d.plus({ days: 1 })) dates.push(d.toISODate()!);
+  const sinceMs = DateTime.fromISO(from, { zone: TZ }).toMillis();
+  const reviews = [...s.reviews].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
+  const team = evaluateTeam(employees.map((e) => {
+    const mine = s.stats.filter((x) => x.employeeId === e.id && x.date >= from && x.date <= to);
+    const notes = s.notes.filter((n) => n.employeeId === e.id && Date.parse(n.createdAt) >= sinceMs);
+    const pens = s.penalties.filter((p) => p.employeeId === e.id && p.status === 'approved' && p.date >= from && p.date <= to);
+    return {
+      id: e.id, department: e.department ?? 'Unassigned', attendance: summarize(records.get(e.id) ?? []),
+      leaveDays: dates.filter((d) => codeOn(e.weekPattern, overrides, e.id, d) === 'L').length,
+      approvedPenalties: pens.length, penaltyAmount: pens.reduce((a, p) => a + p.amount, 0),
+      warnings: notes.filter((n) => n.category === 'warning' || n.category === 'incident').length,
+      compliments: notes.filter((n) => n.category === 'commendation').length,
+      sales: mine.length ? { orders: mine.reduce((a, x) => a + x.orders, 0), salesComms: mine.reduce((a, x) => a + x.salesComms, 0), lds: mine.reduce((a, x) => a + x.lds, 0), po: mine.reduce((a, x) => a + x.po, 0), daysWithData: mine.length } : null,
+      ratings: (reviews.find((r) => r.employeeId === e.id)?.ratings as PersonInput['ratings']) ?? null,
+    };
+  }));
   return employees.filter((e) => !employeeId || e.id === employeeId).map((e) => {
-    const totals = summarize(records.get(e.id) ?? []);
-    const ef = eff.find((x) => x.employeeId === e.id) ?? null;
-    const notes = s.notes.filter((n) => n.employeeId === e.id && Date.parse(n.createdAt) >= since90);
-    const approvedPenalties = s.penalties.filter((p) => p.employeeId === e.id && p.status === 'approved' && p.date >= from).length;
-    const warnings = notes.filter((n) => n.category === 'warning' || n.category === 'incident').length;
-    const rating = notes.reduce((a, n) => a + n.rating, 0);
-    const card = computeCard({ ...totals, approvedPenalties, warningNotes: warnings, noteRatingSum: rating, efficiency: ef }, team);
-    return { employeeId: e.id, name: name(e), employeeNo: e.employeeNo, position: e.position, department: e.department, photoUrl: e.photoUrl ?? null, ...card, period: { from, to, days }, raw: { ...totals, efficiency: ef, approvedPenalties, noteRating: rating, warnings } };
-  }).sort((a, b) => b.overall - a.overall);
+    const r = team.get(e.id)!;
+    return { employeeId: e.id, name: name(e), employeeNo: e.employeeNo, position: e.position, department: e.department, photoUrl: e.photoUrl ?? null, overall: Math.round(r.scores.overall), tier: r.scores.tier, attributes: r.attributes, period: { from, to, days: dates.length }, performance: { scores: r.scores, rank: r.rank, input: r.input } };
+  }).sort((a, b) => b.performance.scores.overall - a.performance.scores.overall);
+}
+function fighterCards(days = 30, employeeId?: string) {
+  const t = DateTime.now().setZone(TZ);
+  return employeeCards(t.minus({ days: days - 1 }).toISODate()!, t.toISODate()!, employeeId);
 }
 
 // ---------------------------------------------------------------- AI (Claude via the artifact `sample` capability)
@@ -291,7 +318,7 @@ function getSample() {
   if (!samplePromise) samplePromise = c?.use ? (c.use('sample') as Promise<SampleFn | null>).catch(() => null) : Promise.resolve(null);
   return samplePromise;
 }
-const AI_RULES = `You are "AI Manager", the HR analyst inside AI Manager HR, a timekeeping and payroll system for a Philippine restaurant (this is a demo with sample data).
+const AI_RULES = `You are "AI Manager", the HR analyst inside AI Manager HR, a timekeeping and payroll system for Mega Dance Center, a nightclub in the Philippines (demo data based on the client's schedule and servers tracker). Servers track Orders, Sales Comms. (packages), LD's (lady's drinks) and PO.
 Answer the owner's questions using ONLY data returned by your tools; never invent numbers. Amounts are Philippine pesos (₱, format like ₱12,345.67). Times are Asia/Manila.
 Be concise: lead with the answer, then the key figures (a short plain-text table is fine), then at most 2 practical recommendations. Plain text only, no markdown headings.
 For penalty or deduction questions, note that the Labor Code (Art. 113) restricts wage deductions. You are read-only: if asked to change data, say where in the app to do it.
@@ -305,7 +332,7 @@ function aiTools() {
     { name: 'get_today', description: 'Live attendance for today: each employee, present, time in, late minutes.', execute: () => { const d = today(); const { employees, records } = dayRecords(d, d); return compact(employees.map((e) => { const r = records.get(e.id)![0]; return { name: name(e), position: e.position, firstIn: r.firstIn, lateMinutes: r.lateMinutes, dayType: r.dayType, clockedInNoOut: !!r.firstIn && !r.lastOut }; })); } },
     { name: 'find_employees', description: 'List employees with id, number, position, pay type and rate. Optional query filters by name/position.', inputSchema: { type: 'object', properties: { query: { type: 'string' } } }, execute: (i: Record<string, unknown>) => { const q = String(i.query ?? '').toLowerCase(); return s.employees.filter((e) => !q || `${name(e)} ${e.position} ${e.employeeNo}`.toLowerCase().includes(q)).map((e) => ({ id: e.id, employeeNo: e.employeeNo, name: name(e), position: e.position, payType: e.payType, rate: e.rate, active: e.active })); } },
     { name: 'get_attendance_summary', description: 'Attendance totals per employee for a date range (days present/absent, late count & minutes, undertime, overtime and night-diff minutes, missing punches). Dates YYYY-MM-DD.', inputSchema: { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' }, employeeId: { type: 'string' } }, required: ['from', 'to'] }, execute: (i: Record<string, unknown>) => { const { employees, records } = dayRecords(dateArg(i.from, thirtyAgo), dateArg(i.to, today()), typeof i.employeeId === 'string' ? [i.employeeId] : undefined); return employees.map((e) => ({ employeeId: e.id, name: name(e), totals: summarize(records.get(e.id) ?? []) })); } },
-    { name: 'get_fighter_cards', description: 'Performance ratings 0-99 per employee for the last N days: overall, tier and PUN (punctuality), ATT (attendance), SPD (service speed), HUS (order slips per hour), SAL (sales per hour), DIS (discipline), REP (management reputation).', inputSchema: { type: 'object', properties: { days: { type: 'number' } } }, execute: (i: Record<string, unknown>) => compact(fighterCards(Math.min(365, Math.max(7, Number(i.days) || 30))).map(({ raw, period: _p, ...c }) => ({ ...c, lates: raw.lateCount, absences: raw.daysAbsent }))) },
+    { name: 'get_fighter_cards', description: 'Employee card ratings for the last N days: overall /100 (efficiency calculator: attendance 30%, punctuality 20%, sales 25%, discipline 15%, teamwork 10%), tier, card attributes, component scores and rank in department.', inputSchema: { type: 'object', properties: { days: { type: 'number' } } }, execute: (i: Record<string, unknown>) => compact(fighterCards(Math.min(365, Math.max(7, Number(i.days) || 30))).map(({ performance, period: _p, ...c }) => ({ ...c, scores: performance.scores.components, rank: performance.rank, lates: performance.input.attendance.lateCount, absences: performance.input.attendance.daysAbsent }))) },
     { name: 'get_server_efficiency', description: 'Waiter efficiency from order slips for a date range: slips, voids, sales, avg ticket, avg service minutes, slips and sales per worked hour, plus missing OS serial numbers.', inputSchema: { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' } }, required: ['from', 'to'] }, execute: (i: Record<string, unknown>) => { const f = dateArg(i.from, thirtyAgo), t = dateArg(i.to, today()); return compact({ servers: efficiency(f, t), serialGaps: serialGaps(f, t) }); } },
     { name: 'get_payroll_runs', description: 'Payroll runs with status and totals (gross, deductions, net).', execute: () => compact(s.runs.map((r) => { const ps = s.payslips.filter((p) => p.runId === r.id); return { id: r.id, periodStart: r.periodStart, periodEnd: r.periodEnd, status: r.status, employees: ps.length, gross: ps.reduce((a, p) => a + p.gross, 0), deductions: ps.reduce((a, p) => a + p.totalDeductions, 0), net: ps.reduce((a, p) => a + p.net, 0) }; })) },
     { name: 'get_payroll_run_detail', description: 'Per-employee payslip lines for one payroll run (amounts, manual edits and reasons).', inputSchema: { type: 'object', properties: { runId: { type: 'string' } }, required: ['runId'] }, execute: (i: Record<string, unknown>) => compact(s.payslips.filter((p) => p.runId === String(i.runId)).map((p) => ({ name: name(findEmp(p.employeeId)), gross: p.gross, deductions: p.totalDeductions, net: p.net, lines: s.lines.filter((l) => l.payslipId === p.id && l.category !== 'employer').map((l) => ({ label: l.label, category: l.category, amount: l.amount, enabled: l.enabled, manual: l.isManual, reason: l.editReason })) }))) },
@@ -351,13 +378,15 @@ on('POST', '/api/auth/login', (_c, _p, _q, b) => {
 on('GET', '/api/auth/me', (c) => { const u = requireUser(c, [...STAFF, 'employee']); return { userId: u.id, tenantId: store().tenant.id, role: u.role, employeeId: u.employeeId, name: u.name, tenantName: store().tenant.name, timezone: TZ }; });
 
 // employees
-on('GET', '/api/employees', (c) => { requireUser(c, STAFF); const s = store(); return [...s.employees].sort((a, b) => a.lastName.localeCompare(b.lastName)).map((e) => ({ ...publicEmployee(e), branchName: s.branches.find((x) => x.id === e.branchId)?.name ?? null, scheduleName: s.schedules.find((x) => x.id === e.scheduleId)?.name ?? null, fingerprints: s.templates.filter((t) => t.employeeId === e.id).length })); });
-on('GET', '/api/employees/:id', (c, p) => { requireUser(c, STAFF); const e = findEmp(p.id); const s = store(); return { ...publicEmployee(e), fingerprints: s.templates.filter((t) => t.employeeId === e.id).map(({ template: _t, ...t }) => t), loginEmail: s.users.find((u) => u.employeeId === e.id)?.email ?? null }; });
+on('GET', '/api/employees', (c) => { requireUser(c, STAFF); const s = store(); return [...s.employees].sort((a, b) => a.employeeNo.localeCompare(b.employeeNo)).map(({ idPhotoUrl, ...e }) => ({ ...publicEmployee(e as Employee), hasIdPhoto: !!idPhotoUrl, branchName: s.branches.find((x) => x.id === e.branchId)?.name ?? null, scheduleName: s.schedules.find((x) => x.id === e.scheduleId)?.name ?? null, fingerprints: s.templates.filter((t) => t.employeeId === e.id).length })); });
+on('GET', '/api/employees/:id', (c, p) => { requireUser(c, STAFF); const e = findEmp(p.id); const s = store(); return { ...publicEmployee(e), fingerprints: s.templates.filter((t) => t.employeeId === e.id).map(({ template: _t, ...t }) => t), loginEmail: s.users.find((u) => u.employeeId === e.id)?.email ?? null, idVerifiedByName: userName(e.idVerifiedBy ?? null) }; });
 on('POST', '/api/employees', (c, _p, _q, b) => {
   requireUser(c, ADMIN);
-  if (!b.employeeNo || !b.firstName || !b.lastName) fail(400, 'Employee no., first and last name are required');
+  if (!b.employeeNo || !b.firstName) fail(400, 'Employee no. and first name are required');
   if (store().employees.some((e) => e.employeeNo === b.employeeNo)) fail(409, 'Employee number already exists');
-  const e: Employee = { id: uid(), employeeNo: String(b.employeeNo), firstName: String(b.firstName), lastName: String(b.lastName), position: (b.position as string) || null, department: (b.department as string) || null, branchId: (b.branchId as string) || null, scheduleId: (b.scheduleId as string) || null, payType: (b.payType as Employee['payType']) ?? 'daily', rate: Number(b.rate) || 0, allowances: (b.allowances as Employee['allowances']) ?? [], exemptions: (b.exemptions as Employee['exemptions']) ?? {}, tin: (b.tin as string) || null, sssNo: (b.sssNo as string) || null, philhealthNo: (b.philhealthNo as string) || null, pagibigNo: (b.pagibigNo as string) || null, hireDate: (b.hireDate as string) || null, active: b.active !== false, pin: null, biometricConsentAt: null, createdAt: nowIso() };
+  const e: Employee = { id: uid(), employeeNo: String(b.employeeNo), firstName: String(b.firstName), lastName: String(b.lastName ?? ''), position: (b.position as string) || null, department: (b.department as string) || null, branchId: (b.branchId as string) || null, scheduleId: (b.scheduleId as string) || null, payType: (b.payType as Employee['payType']) ?? 'daily', rate: Number(b.rate) || 0, allowances: (b.allowances as Employee['allowances']) ?? [], exemptions: (b.exemptions as Employee['exemptions']) ?? {}, tin: (b.tin as string) || null, sssNo: (b.sssNo as string) || null, philhealthNo: (b.philhealthNo as string) || null, pagibigNo: (b.pagibigNo as string) || null, hireDate: (b.hireDate as string) || null, active: b.active !== false, pin: null, biometricConsentAt: null, createdAt: nowIso(),
+    phone: (b.phone as string) || null, facebook: (b.facebook as string) || null, address: (b.address as string) || null, idType: (b.idType as string) || null, idNumber: (b.idNumber as string) || null,
+    weekPattern: Array.isArray(b.weekPattern) && b.weekPattern.length === 7 ? (b.weekPattern as string[]) : ['D', 'D', 'D', 'D', 'D', 'O', 'O'] };
   store().employees.push(e);
   audit(c, { entity: 'employee', entityId: e.id, action: 'create', after: publicEmployee(e) });
   return publicEmployee(e);
@@ -368,7 +397,7 @@ on('PATCH', '/api/employees/:id', (c, p, _q, b) => {
   const before = publicEmployee({ ...e });
   const { reason, ...changes } = b;
   if (changes.rate !== undefined && Number(changes.rate) !== e.rate && !reason) fail(400, 'A reason is required when changing the pay rate');
-  const allowed = ['employeeNo', 'firstName', 'lastName', 'position', 'department', 'branchId', 'scheduleId', 'payType', 'rate', 'allowances', 'exemptions', 'tin', 'sssNo', 'philhealthNo', 'pagibigNo', 'hireDate', 'active'];
+  const allowed = ['employeeNo', 'firstName', 'lastName', 'position', 'department', 'branchId', 'scheduleId', 'payType', 'rate', 'allowances', 'exemptions', 'tin', 'sssNo', 'philhealthNo', 'pagibigNo', 'hireDate', 'active', 'phone', 'facebook', 'address', 'idType', 'idNumber', 'weekPattern'];
   for (const k of allowed) if (k in changes) (e as unknown as Record<string, unknown>)[k] = k === 'rate' ? Number(changes[k]) : changes[k];
   audit(c, { entity: 'employee', entityId: e.id, action: 'update', before, after: publicEmployee(e), reason: (reason as string) ?? null });
   return publicEmployee(e);
@@ -398,21 +427,135 @@ on('PUT', '/api/employees/:id/photo', (c, p, _q, b) => {
   audit(c, { entity: 'employee', entityId: e.id, action: url ? 'set_photo' : 'remove_photo' });
   return { ok: true };
 });
-on('GET', '/api/workforce/week', (c, _p, q) => {
+on('PUT', '/api/employees/:id/id-photo', (c, p, _q, b) => {
+  requireUser(c, ADMIN);
+  const e = findEmp(p.id);
+  const url = b.idPhotoUrl as string | null;
+  if (url !== null && (typeof url !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(url))) fail(400, 'Image must be a JPEG, PNG or WebP');
+  if (url && url.length > 600_000) fail(400, 'Image is too large — use one under 400 KB');
+  Object.assign(e, { idPhotoUrl: url, idVerifiedAt: null, idVerifiedBy: null });
+  audit(c, { entity: 'employee', entityId: e.id, action: url ? 'set_id_photo' : 'remove_id_photo' });
+  return { ok: true };
+});
+on('POST', '/api/employees/:id/verify-id', (c, p, _q, b) => {
+  const u = requireUser(c, ADMIN);
+  const e = findEmp(p.id);
+  if (b.verified && (!e.idNumber || !e.idPhotoUrl)) fail(400, 'Add the ID type, number and a photo of the ID before verifying');
+  Object.assign(e, b.verified ? { idVerifiedAt: nowIso(), idVerifiedBy: u.id } : { idVerifiedAt: null, idVerifiedBy: null });
+  audit(c, { entity: 'employee', entityId: e.id, action: b.verified ? 'verify_id' : 'unverify_id' });
+  return { ok: true };
+});
+
+// roster (weekly staff schedule)
+on('GET', '/api/roster/week', (c, _p, q) => {
   requireUser(c, STAFF);
   const s = store();
   const start = DateTime.fromISO(q.get('start') ?? today(), { zone: TZ }).startOf('week');
   const end = start.plus({ days: 6 }).toISODate()!;
-  return weeklyPlan(
-    s.employees.filter((e) => e.active).map((e) => {
-      const sch = s.schedules.find((x) => x.id === e.scheduleId);
-      return { ...e, schedule: sch ? { name: sch.name, startTime: sch.startTime, endTime: sch.endTime, restDays: sch.restDays } : null };
-    }),
-    start.toISODate()!,
-    s.holidays.filter((h) => h.date >= start.toISODate()! && h.date <= end).map((h) => ({ date: h.date, type: h.type, name: h.name })),
-    settings().payroll, tablesFor(start.toISODate()!),
-  );
+  const st = settings();
+  return rosterWeek({
+    employees: s.employees.filter((e) => e.active).map((e) => ({ id: e.id, name: name(e), department: e.department, position: e.position, photoUrl: e.photoUrl ?? null, weekPattern: e.weekPattern, dailyRate: deriveRates(e, st.payroll).daily })),
+    entries: s.roster.filter((r) => r.date >= start.toISODate()! && r.date <= end),
+    departments: st.departments ?? [],
+    weekStart: start.toISODate()!,
+  });
 });
+on('PUT', '/api/roster/cells', (c, _p, _q, b) => {
+  requireUser(c, STAFF);
+  const s = store();
+  const changes = (b.changes as RosterEntry[]) ?? [];
+  if (!changes.length) fail(400, 'Nothing to change');
+  for (const ch of changes) {
+    const e = findEmp(ch.employeeId);
+    const code = String(ch.code ?? '').trim().slice(0, 16);
+    s.roster = s.roster.filter((r) => !(r.employeeId === e.id && r.date === ch.date));
+    if (b.scope === 'always') {
+      const week = Array.from({ length: 7 }, (_, i) => e.weekPattern[i] ?? '');
+      week[DateTime.fromISO(ch.date).weekday - 1] = code;
+      e.weekPattern = week;
+    } else s.roster.push({ employeeId: e.id, date: ch.date, code });
+  }
+  audit(c, { entity: 'roster', action: b.scope === 'always' ? 'update_usual_week' : 'update_week', after: changes });
+  return { ok: true, changed: changes.length };
+});
+
+// servers tracker
+const TRACKED = ['Servers', 'Supervisors'];
+on('GET', '/api/tracker', (c, _p, q) => {
+  requireUser(c, STAFF);
+  const s = store();
+  const month = q.get('month') ?? DateTime.now().setZone(TZ).toFormat('yyyy-LL');
+  const weeks = monthWeeks(month);
+  const from = weeks[0].start, to = weeks[weeks.length - 1].end;
+  const people = s.employees.filter((e) => e.active && TRACKED.includes(e.department ?? ''))
+    .sort((a, b) => (a.department === b.department ? 0 : a.department === 'Servers' ? -1 : 1))
+    .map((e) => ({ employeeId: e.id, name: name(e), position: e.position }));
+  const ids = people.map((x) => x.employeeId);
+  const rows = s.stats.filter((x) => ids.includes(x.employeeId) && x.date >= from && x.date <= to);
+  const { records } = dayRecords(from, to, ids);
+  const pens = s.penalties.filter((x) => x.status === 'approved' && ids.includes(x.employeeId) && x.date >= from && x.date <= to);
+  return {
+    month, people, stats: rows,
+    weeks: weeks.map((w) => {
+      const daysWorked = new Map(ids.map((id) => [id, summarize((records.get(id) ?? []).filter((d) => d.date >= w.start && d.date <= w.end)).daysPresent]));
+      const penalties = new Map(ids.map((id) => [id, pens.filter((x) => x.employeeId === id && x.date >= w.start && x.date <= w.end).reduce((a, x) => a + x.amount, 0)]));
+      const totals = trackerTotals(people, rows, w.days, { daysWorked, penalties });
+      return { ...w, totals, ranks: Object.fromEntries(TRACKER_METRICS.map((m) => [m, rankMetric(totals, m)])) };
+    }),
+  };
+});
+on('PUT', '/api/tracker/cells', (c, _p, _q, b) => {
+  requireUser(c, STAFF);
+  const s = store();
+  const changes = (b.changes as { employeeId: string; date: string; metric: string; value: number }[]) ?? [];
+  for (const ch of changes) {
+    findEmp(ch.employeeId);
+    if (!(TRACKER_METRICS as readonly string[]).includes(ch.metric)) fail(400, 'Unknown metric');
+    const v = Math.max(0, Math.round(Number(ch.value) || 0));
+    let row = s.stats.find((x) => x.employeeId === ch.employeeId && x.date === ch.date);
+    if (!row) { row = { employeeId: ch.employeeId, date: ch.date, orders: 0, salesComms: 0, lds: 0, po: 0 }; s.stats.push(row); }
+    (row as unknown as Record<string, number>)[ch.metric] = v;
+  }
+  audit(c, { entity: 'server_stats', action: 'update', after: { cells: changes.length } });
+  return { ok: true };
+});
+
+// 5-star reviews + performance summary
+on('GET', '/api/employees/:id/reviews', (c, p) => { requireUser(c, STAFF); findEmp(p.id); return store().reviews.filter((r) => r.employeeId === p.id).sort((a, b) => b.periodEnd.localeCompare(a.periodEnd)).map((r) => ({ ...r, reviewerName: userName(r.reviewerId) })); });
+on('POST', '/api/employees/:id/reviews', (c, p, _q, b) => {
+  const u = requireUser(c, STAFF);
+  findEmp(p.id);
+  const iso = /^\d{4}-\d{2}-\d{2}$/;
+  if (!iso.test(String(b.periodStart)) || !iso.test(String(b.periodEnd))) fail(400, 'Enter the review period');
+  const ratings = Object.fromEntries(Object.entries((b.ratings as Record<string, number>) ?? {}).filter(([, v]) => v >= 0.5 && v <= 5).map(([k, v]) => [k, Math.round(v * 2) / 2]));
+  const list = (v: unknown) => (Array.isArray(v) ? v.map(String).map((x) => x.trim()).filter(Boolean).slice(0, 10) : []);
+  const r: Review = {
+    id: uid(), employeeId: p.id, reviewerId: u.id, periodStart: String(b.periodStart), periodEnd: String(b.periodEnd), ratings,
+    strengths: list(b.strengths), weaknesses: list(b.weaknesses), opportunities: list(b.opportunities), threats: list(b.threats),
+    notes: (b.notes as string) || null, assists: Number(b.assists) || 0, employeeOfMonth: Number(b.employeeOfMonth) || 0,
+    trainingCompleted: Number(b.trainingCompleted) || 0, crossTrained: Number(b.crossTrained) || 0, skillLevel: (b.skillLevel as string) || null,
+    promotionReady: !!b.promotionReady, managerName: (b.managerName as string) || u.name.replace(/\s*\(.*\)$/, ''), createdAt: nowIso(),
+  };
+  store().reviews.push(r);
+  audit(c, { entity: 'review', entityId: r.id, action: 'create', after: { employeeId: p.id, period: [r.periodStart, r.periodEnd] } });
+  return r;
+});
+on('DELETE', '/api/reviews/:id', (c, p) => { requireUser(c, STAFF); const s = store(); const r = s.reviews.find((x) => x.id === p.id) ?? notFound('Review'); s.reviews = s.reviews.filter((x) => x !== r); audit(c, { entity: 'review', entityId: p.id, action: 'delete', before: r }); return { ok: true }; });
+on('GET', '/api/employees/:id/performance', (c, p, q) => {
+  requireUser(c, STAFF);
+  const e = findEmp(p.id);
+  const t = DateTime.now().setZone(TZ);
+  const from = q.get('from') ?? t.minus({ months: 3 }).plus({ days: 1 }).toISODate()!;
+  const to = q.get('to') ?? t.toISODate()!;
+  const [card] = employeeCards(from, to, e.id);
+  const review = [...store().reviews].filter((r) => r.employeeId === e.id).sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0] ?? null;
+  return {
+    period: { from, to },
+    employee: { id: e.id, employeeNo: e.employeeNo, name: name(e), position: e.position, department: e.department, hireDate: e.hireDate, active: e.active, photoUrl: e.photoUrl ?? null, location: store().branches.find((x) => x.id === e.branchId)?.name ?? store().tenant.name, payType: e.payType },
+    card: card ?? null, review,
+  };
+});
+
 on('POST', '/api/employees/:id/biometric-consent', (c, p) => { requireUser(c, ADMIN); const e = findEmp(p.id); e.biometricConsentAt = nowIso(); audit(c, { entity: 'employee', entityId: e.id, action: 'biometric_consent' }); return { ok: true }; });
 on('POST', '/api/employees/:id/fingerprints', (c, p, _q, b) => {
   requireUser(c, ADMIN);
@@ -433,7 +576,7 @@ on('PATCH', '/api/settings', (c, _p, _q, b) => {
   const t = store().tenant;
   const before = settings();
   const payroll = (b.payroll ?? {}) as Partial<TenantSettings['payroll']>;
-  t.settings = { payroll: { ...before.payroll, ...payroll, components: { ...before.payroll.components, ...(payroll.components ?? {}) } } };
+  t.settings = { payroll: { ...before.payroll, ...payroll, components: { ...before.payroll.components, ...(payroll.components ?? {}) } }, departments: (b.departments as TenantSettings['departments']) ?? before.departments ?? [] };
   audit(c, { entity: 'tenant', entityId: t.id, action: 'update_settings', before, after: t.settings });
   return { ok: true, settings: t.settings };
 });
@@ -670,7 +813,11 @@ on('GET', '/api/efficiency', (c, _p, q) => { requireUser(c, STAFF); const f = q.
 on('GET', '/api/notes', (c, _p, q) => { requireUser(c, STAFF); const eid = q.get('employeeId'); return store().notes.filter((n) => !eid || n.employeeId === eid).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((n) => ({ ...n, authorName: userName(n.authorId), employeeName: name(findEmp(n.employeeId)) })); });
 on('POST', '/api/notes', (c, _p, _q, b) => { const u = requireUser(c, STAFF); findEmp(String(b.employeeId)); if (!b.title || !b.body) fail(400, 'Enter a title and details'); const n: Note = { id: uid(), employeeId: String(b.employeeId), authorId: u.id, category: String(b.category), title: String(b.title), body: String(b.body), rating: Math.max(-3, Math.min(3, Number(b.rating) || 0)), visibleToEmployee: !!b.visibleToEmployee, createdAt: nowIso() }; store().notes.push(n); audit(c, { entity: 'note', entityId: n.id, action: 'create', after: n }); return n; });
 on('DELETE', '/api/notes/:id', (c, p) => { requireUser(c, STAFF); const s = store(); const n = s.notes.find((x) => x.id === p.id) ?? notFound('Note'); s.notes = s.notes.filter((x) => x !== n); audit(c, { entity: 'note', entityId: n.id, action: 'delete', before: n }); return { ok: true }; });
-on('GET', '/api/stats/cards', (c, _p, q) => { requireUser(c, STAFF); return fighterCards(Number(q.get('days')) || 30, q.get('employeeId') ?? undefined); });
+on('GET', '/api/stats/cards', (c, _p, q) => {
+  requireUser(c, STAFF);
+  const from = q.get('from'), to = q.get('to');
+  return from && to ? employeeCards(from, to, q.get('employeeId') ?? undefined) : fighterCards(Number(q.get('days')) || 30, q.get('employeeId') ?? undefined);
+});
 on('GET', '/api/dashboard', (c) => {
   requireUser(c, STAFF);
   const s = store();
@@ -736,47 +883,32 @@ export async function demoRequest(method: string, path: string, body: unknown, t
 function seed(): Store {
   let rnd = 42;
   const rand = () => ((rnd = (rnd * 1664525 + 1013904223) % 2 ** 32) / 2 ** 32);
-  const pick = <T,>(xs: T[]) => xs[Math.floor(rand() * xs.length)];
   const s: Store = {
     version: STORE_VERSION,
-    tenant: { id: uid(), name: 'Demo Restaurant PH', timezone: TZ, currency: 'PHP', settings: structuredClone(DEFAULT_SETTINGS) },
-    branches: [{ id: uid(), name: 'BGC Main', address: 'Bonifacio Global City, Taguig' }],
+    tenant: { id: uid(), name: 'Mega Dance Center', timezone: TZ, currency: 'PHP', settings: { ...structuredClone(DEFAULT_SETTINGS), departments: structuredClone(MDC_DEPARTMENTS) } },
+    branches: [{ id: uid(), name: 'MDC Main', address: 'Mega Dance Center' }],
     schedules: [], employees: [], users: [], devices: [], templates: [], punches: [], holidays: [], runs: [], payslips: [], lines: [], rules: [], penalties: [], slips: [], notes: [], audit: [],
+    roster: [], stats: [], reviews: [],
   };
   db = s;
   const branchId = s.branches[0].id;
-  const daySched: Schedule = { id: uid(), name: 'Day 09:00–18:00', startTime: '09:00', endTime: '18:00', breakMinutes: 60, graceMinutes: 5, restDays: [7] };
-  const midSched: Schedule = { id: uid(), name: 'Mid 14:00–23:00', startTime: '14:00', endTime: '23:00', breakMinutes: 60, graceMinutes: 5, restDays: [1] };
-  const dayWed: Schedule = { id: uid(), name: 'Day 09:00–18:00 (Wed off)', startTime: '09:00', endTime: '18:00', breakMinutes: 60, graceMinutes: 5, restDays: [3] };
-  const midTue: Schedule = { id: uid(), name: 'Mid 14:00–23:00 (Tue off)', startTime: '14:00', endTime: '23:00', breakMinutes: 60, graceMinutes: 5, restDays: [2] };
-  const early: Schedule = { id: uid(), name: 'Early 06:00–15:00 (Sat off)', startTime: '06:00', endTime: '15:00', breakMinutes: 60, graceMinutes: 5, restDays: [6] };
-  s.schedules.push(daySched, midSched, dayWed, midTue, early);
-  const owner: User = { id: uid(), email: 'admin@demo.ph', name: 'Maria Santos (Owner)', password: 'Admin123!', role: 'owner', employeeId: null };
-  s.users.push(owner, { id: uid(), email: 'manager@demo.ph', name: 'Paolo Reyes (Manager)', password: 'Manager123!', role: 'manager', employeeId: null });
-  const staff = [
-    { no: 'E-001', first: 'Juan', last: 'Dela Cruz', position: 'Server', dept: 'Service', pay: 'daily' as const, rate: 695, sch: daySched, lateBias: 0.1, speed: 1.0 },
-    { no: 'E-002', first: 'Ana', last: 'Lim', position: 'Server', dept: 'Service', pay: 'daily' as const, rate: 695, sch: daySched, lateBias: 0.02, speed: 0.8 },
-    { no: 'E-003', first: 'Mark', last: 'Villanueva', position: 'Server', dept: 'Service', pay: 'daily' as const, rate: 695, sch: midSched, lateBias: 0.35, speed: 1.3 },
-    { no: 'E-004', first: 'Liza', last: 'Garcia', position: 'Head Server', dept: 'Service', pay: 'daily' as const, rate: 800, sch: midSched, lateBias: 0.05, speed: 0.9 },
-    { no: 'E-005', first: 'Carlo', last: 'Mendoza', position: 'Line Cook', dept: 'Kitchen', pay: 'daily' as const, rate: 750, sch: daySched, lateBias: 0.15, speed: 1 },
-    { no: 'E-006', first: 'Grace', last: 'Torres', position: 'Cashier', dept: 'Front', pay: 'daily' as const, rate: 695, sch: daySched, lateBias: 0.08, speed: 1 },
-    { no: 'E-007', first: 'Ramon', last: 'Aquino', position: 'Kitchen Supervisor', dept: 'Kitchen', pay: 'monthly' as const, rate: 28000, sch: daySched, lateBias: 0.05, speed: 1 },
-    { no: 'E-008', first: 'Bea', last: 'Navarro', position: 'Restaurant Manager', dept: 'Management', pay: 'monthly' as const, rate: 45000, sch: daySched, lateBias: 0.0, speed: 1 },
-    { no: 'E-009', first: 'Jessa', last: 'Ramos', position: 'Server', dept: 'Service', pay: 'daily' as const, rate: 695, sch: dayWed, lateBias: 0.12, speed: 1.1 },
-    { no: 'E-010', first: 'Kevin', last: 'Bautista', position: 'Dishwasher', dept: 'Kitchen', pay: 'daily' as const, rate: 645, sch: midTue, lateBias: 0.2, speed: 1 },
-    { no: 'E-011', first: 'Rica', last: 'Santos', position: 'Prep Cook', dept: 'Kitchen', pay: 'daily' as const, rate: 720, sch: early, lateBias: 0.06, speed: 1 },
-    { no: 'E-012', first: 'Noel', last: 'Cruz', position: 'Barista', dept: 'Bar', pay: 'daily' as const, rate: 695, sch: early, lateBias: 0.1, speed: 1 },
-    { no: 'E-013', first: 'Mae', last: 'Flores', position: 'Bartender', dept: 'Bar', pay: 'daily' as const, rate: 760, sch: midTue, lateBias: 0.08, speed: 1 },
-    { no: 'E-014', first: 'Joy', last: 'Castillo', position: 'Cashier', dept: 'Front', pay: 'daily' as const, rate: 695, sch: midSched, lateBias: 0.05, speed: 1 },
-  ];
+  const owner: User = { id: uid(), email: 'admin@demo.ph', name: 'Daniel R. (Owner)', password: 'Admin123!', role: 'owner', employeeId: null };
+  s.users.push(owner, { id: uid(), email: 'manager@demo.ph', name: 'Kaye (Supervisor)', password: 'Manager123!', role: 'manager', employeeId: null });
   const created = nowIso();
-  for (const x of staff) {
-    s.employees.push({ id: uid(), employeeNo: x.no, firstName: x.first, lastName: x.last, position: x.position, department: x.dept, branchId, scheduleId: x.sch.id, payType: x.pay, rate: x.rate, allowances: x.pay === 'monthly' ? [{ code: 'rice', label: 'Rice subsidy (de minimis)', amount: 1000 }] : [], exemptions: {}, tin: String(Math.floor(rand() * 1e9)), sssNo: `34-${Math.floor(rand() * 1e7)}-${Math.floor(rand() * 9)}`, philhealthNo: null, pagibigNo: null, hireDate: '2025-06-01', active: true, pin: '1234', biometricConsentAt: created, createdAt: created });
-  }
+  const rateOf = (dep: string) => MDC_DEPARTMENTS.find((d) => d.name === dep)!.dailyRate;
+  MDC_STAFF.forEach((x, i) => {
+    s.employees.push({
+      id: uid(), employeeNo: `MDC-${String(i + 1).padStart(3, '0')}`, firstName: x.name, lastName: '', position: x.position, department: x.department, branchId, scheduleId: null,
+      payType: 'daily', rate: rateOf(x.department), allowances: [], exemptions: {}, tin: null, sssNo: null, philhealthNo: null, pagibigNo: null,
+      hireDate: DateTime.fromISO('2024-01-15').plus({ days: Math.floor(rand() * 600) }).toISODate()!, active: true, pin: '1234', biometricConsentAt: created, createdAt: created,
+      phone: `09${String(170000000 + Math.floor(rand() * 9999999)).padStart(9, '0')}`, facebook: null, address: null, idType: null, idNumber: null, weekPattern: [...x.week],
+    });
+  });
   const emps = s.employees;
-  s.users.push({ id: uid(), email: 'juan@demo.ph', name: 'Juan Dela Cruz', password: 'Employee123!', role: 'employee', employeeId: emps[0].id });
+  const byName = new Map(emps.map((e) => [e.firstName, e]));
+  s.users.push({ id: uid(), email: 'jane@demo.ph', name: 'Jane', password: 'Employee123!', role: 'employee', employeeId: byName.get('Jane')!.id });
   for (const e of emps) s.templates.push({ id: uid(), employeeId: e.id, finger: 'R_INDEX', format: 'SIMULATED', template: `SIM:${e.employeeNo}`, quality: 90, createdAt: created });
-  const device: Device = { id: uid(), name: 'Front Counter Tablet', driver: 'simulator', active: true, lastSeenAt: null, createdAt: created, token: DEMO_DEVICE_TOKEN, branchId };
+  const device: Device = { id: uid(), name: 'Entrance Time Clock', driver: 'simulator', active: true, lastSeenAt: null, createdAt: created, token: DEMO_DEVICE_TOKEN, branchId };
   s.devices.push(device);
   const hol: [string, string, Holiday['type']][] = [
     ['2026-01-01', "New Year's Day", 'regular'], ['2026-02-17', 'Chinese New Year', 'special_non_working'], ['2026-04-02', 'Maundy Thursday', 'regular'],
@@ -793,42 +925,49 @@ function seed(): Store {
     { id: uid(), name: 'No time-out', config: { kind: 'missing_timeout', amount: 20 }, active: true, autoApprove: false, createdAt: created },
   );
 
-  // Five weeks of punches and order slips up to yesterday.
-  const t0 = DateTime.now().setZone(TZ).startOf('day');
-  let serial = 1000;
+  // Five weeks of punches following each person's usual week and their department's hours (plus today so far).
   const nowDt = DateTime.now().setZone(TZ);
-  // Five weeks of history plus today so far (the time clock looks live).
+  const t0 = nowDt.startOf('day');
   for (let d = t0.minus({ days: 35 }); d <= t0; d = d.plus({ days: 1 })) {
-    staff.forEach((x, i) => {
-      const e = emps[i];
-      if (x.sch.restDays.includes(d.weekday)) return;
-      if (rand() < 0.04) return;
-      const [sh, sm] = x.sch.startTime.split(':').map(Number);
-      const [eh, em] = x.sch.endTime.split(':').map(Number);
-      const late = rand() < x.lateBias ? Math.floor(6 + rand() * 35) : -Math.floor(rand() * 15);
+    for (const e of emps) {
+      if (!isOnDuty(e.weekPattern[d.weekday - 1]) || rand() < 0.03) continue;
+      const dep = MDC_DEPARTMENTS.find((x) => x.name === e.department)!;
+      const [sh, sm] = dep.shiftStart.split(':').map(Number);
+      const [eh, em] = dep.shiftEnd.split(':').map(Number);
+      const late = rand() < 0.1 ? Math.floor(6 + rand() * 30) : -Math.floor(rand() * 15);
       const inAt = d.set({ hour: sh, minute: sm }).plus({ minutes: late });
-      const outAt = d.set({ hour: eh, minute: em }).plus({ minutes: Math.floor(rand() * 75) - 5 });
-      if (inAt > nowDt) return;
+      let outAt = d.set({ hour: eh, minute: em }).plus({ minutes: Math.floor(rand() * 40) - 5 });
+      if (outAt <= inAt) outAt = outAt.plus({ days: 1 });
+      if (inAt > nowDt) continue;
       s.punches.push({ id: uid(), employeeId: e.id, deviceId: device.id, type: 'in', punchedAt: inAt.toUTC().toISO()!, method: 'fingerprint', matchScore: 120 + Math.floor(rand() * 60), clientUuid: null, voided: false, createdBy: null, reason: null });
-      if (outAt < nowDt && rand() > 0.03) s.punches.push({ id: uid(), employeeId: e.id, deviceId: device.id, type: 'out', punchedAt: outAt.toUTC().toISO()!, method: 'fingerprint', matchScore: 120 + Math.floor(rand() * 60), clientUuid: null, voided: false, createdBy: null, reason: null });
-      if (x.position.includes('Server')) {
-        const n = Math.floor(10 + (rand() * 10) / x.speed);
-        for (let k = 0; k < n; k++) {
-          const opened = inAt.plus({ minutes: 20 + Math.floor(rand() * 420) });
-          if (opened.plus({ minutes: 60 }) > nowDt) continue;
-          const serve = Math.max(4, Math.round((8 + rand() * 12) * x.speed));
-          const isVoid = rand() < 0.02 * x.speed;
-          serial += rand() < 0.01 ? 2 : 1;
-          s.slips.push({ id: uid(), branchId, serverEmployeeId: e.id, serialNo: `OS-${String(serial).padStart(6, '0')}`, tableNo: String(1 + Math.floor(rand() * 20)), openedAt: opened.toUTC().toISO()!, servedAt: opened.plus({ minutes: serve }).toUTC().toISO()!, closedAt: opened.plus({ minutes: serve + 25 + Math.floor(rand() * 30) }).toUTC().toISO()!, amount: Math.round((350 + rand() * 2500) / 10) * 10, itemsCount: 1 + Math.floor(rand() * 8), status: isVoid ? 'void' : 'closed', voidReason: isVoid ? pick(['Customer cancelled', 'Wrong order', 'Duplicate']) : null });
-        }
-      }
-    });
+      if (outAt < nowDt && rand() > 0.02) s.punches.push({ id: uid(), employeeId: e.id, deviceId: device.id, type: 'out', punchedAt: outAt.toUTC().toISO()!, method: 'fingerprint', matchScore: 120 + Math.floor(rand() * 60), clientUuid: null, voided: false, createdBy: null, reason: null });
+    }
   }
-  const note = (i: number, category: string, title: string, body: string, rating: number, visible = false) => s.notes.push({ id: uid(), employeeId: emps[i].id, authorId: owner.id, category, title, body, rating, visibleToEmployee: visible, createdAt: t0.minus({ days: 3 + i }).toUTC().toISO()! });
-  note(1, 'commendation', 'Great guest feedback', 'Two 5-star reviews mention Ana by name this week.', 2, true);
-  note(2, 'warning', 'Repeated tardiness', 'Late 4 times in 2 weeks. Verbal warning given; next is written.', -2);
-  note(3, 'coaching', 'Training new servers', 'Liza is mentoring two new hires — keep her on mid shift.', 1);
-  note(0, 'general', 'Upsell target', 'Juan reached the dessert upsell target.', 1, true);
+
+  // October servers tracker, exactly as in the client's file.
+  for (const [nm, days] of Object.entries(MDC_TRACKER)) {
+    const e = byName.get(nm);
+    if (!e) continue;
+    for (const [date, m] of Object.entries(days)) s.stats.push({ employeeId: e.id, date, orders: m.orders ?? 0, salesComms: m.salesComms ?? 0, lds: m.lds ?? 0, po: m.po ?? 0 });
+  }
+
+  // Sample 5-star reviews and notes.
+  const review = (nm: string, ratings: Record<string, number>, extra: Partial<Review>) => s.reviews.push({
+    id: uid(), employeeId: byName.get(nm)!.id, reviewerId: owner.id, periodStart: '2026-07-01', periodEnd: '2026-09-30', ratings,
+    strengths: [], weaknesses: [], opportunities: [], threats: [], notes: null, assists: 0, employeeOfMonth: 0, trainingCompleted: 0, crossTrained: 0,
+    skillLevel: null, promotionReady: false, managerName: 'Daniel R.', createdAt: created, ...extra,
+  });
+  review('Jane', { serviceQuality: 4.5, productKnowledge: 4, problemSolving: 4.5, timeManagement: 4, adaptability: 4.5, workEthic: 5, leadership: 4.5, communication: 4.5, reliability: 5, professionalism: 4.5, customerOrientation: 5, teamwork: 4.5 },
+    { strengths: ['Excellent attendance', 'High customer satisfaction', 'Strong teamwork', "Top LD's sales"], weaknesses: ['Occasionally late', 'Product knowledge on new bottles'], opportunities: ['Leadership development', 'Supervisor training'], threats: ['Burnout risk on weekends'], notes: 'Jane is a valuable asset to the floor. Keep developing product knowledge and upselling of packages.', assists: 58, employeeOfMonth: 2, trainingCompleted: 6, crossTrained: 2, skillLevel: 'Advanced', promotionReady: true });
+  review('Kevin', { serviceQuality: 4.5, productKnowledge: 4, problemSolving: 4, timeManagement: 4.5, adaptability: 4, workEthic: 4.5, leadership: 3.5, communication: 4, reliability: 4.5, professionalism: 4, customerOrientation: 4.5, teamwork: 4 },
+    { strengths: ['Highest order volume', 'Fast service'], weaknesses: ['Low package sales'], opportunities: ['Sales incentives'], threats: ['High workload during peak hours'], notes: 'Kevin carries the food orders on busy nights.', assists: 31, employeeOfMonth: 1, trainingCompleted: 4, crossTrained: 1, skillLevel: 'Intermediate' });
+  review('Jaysah', { serviceQuality: 4.5, productKnowledge: 5, problemSolving: 4.5, timeManagement: 4, adaptability: 4.5, workEthic: 4.5, leadership: 5, communication: 4.5, reliability: 4.5, professionalism: 5, customerOrientation: 4.5, teamwork: 5 },
+    { strengths: ['Leads by example', "Strong LD's and package sales"], weaknesses: ['Delegation'], opportunities: ['Floor manager track'], threats: ['Competition hiring supervisors'], notes: 'Reliable supervisor; ready for more responsibility.', assists: 74, employeeOfMonth: 3, trainingCompleted: 9, crossTrained: 3, skillLevel: 'Expert', promotionReady: true });
+  const note = (nm: string, category: string, title: string, body: string, rating: number, daysAgo: number) => s.notes.push({ id: uid(), employeeId: byName.get(nm)!.id, authorId: owner.id, category, title, body, rating, visibleToEmployee: category !== 'warning', createdAt: t0.minus({ days: daysAgo }).toUTC().toISO()! });
+  note('Jane', 'commendation', 'Guest compliment', 'VIP table asked for Jane by name.', 2, 4);
+  note('Jane', 'warning', 'Late twice this cutoff', 'Verbal reminder given.', -1, 9);
+  note('Glaze', 'commendation', "LD's target reached", "Top LD's for the week of Oct 12–18.", 1, 12);
+  note('Mia', 'coaching', 'Low orders', 'Pair with Jane on Friday shifts.', 0, 6);
 
   // A finished payroll for the previous cutoff, so payslips and history are populated.
   const ctx: Ctx = { user: owner, device: null, ip: 'seed' };
@@ -839,13 +978,8 @@ function seed(): Store {
   generatePenalties(run.periodStart, run.periodEnd);
   for (const p of s.penalties.filter((x) => x.kind === 'late' && x.amount >= 50)) Object.assign(p, { status: 'approved', decidedBy: owner.id, decidedAt: created, decisionReason: 'Per written late policy' });
   computeRun(ctx, run.id);
-  const juanSlip = s.payslips.find((p) => p.runId === run.id && p.employeeId === emps[0].id)!;
-  s.lines.push({ id: uid(), payslipId: juanSlip.id, code: 'MANUAL_SEEDCA', label: 'Cash advance', category: 'deduction', quantity: null, rate: null, amount: 500, taxable: false, enabled: true, isManual: true, sortOrder: 500, updatedBy: owner.id, updatedAt: created, editReason: 'CA approved by owner, repay in 1 cutoff' });
-  audit(ctx, { entity: 'payslip_line', action: 'add_manual', after: { payslipId: juanSlip.id, runId: run.id, employeeId: emps[0].id, label: 'Cash advance', category: 'deduction', amount: 500 }, reason: 'CA approved by owner, repay in 1 cutoff' });
-  computeRun(ctx, run.id, [emps[0].id]);
   run.status = 'approved'; run.approvedBy = owner.id; run.approvedAt = created;
   audit(ctx, { entity: 'payroll_run', entityId: run.id, action: 'approve', before: { status: 'review' }, after: { status: 'approved' } });
-  // Pending penalties from the current cutoff for the manager to review.
   generatePenalties(prevEnd.plus({ days: 1 }).toISODate()!, t0.toISODate()!);
   return s;
 }

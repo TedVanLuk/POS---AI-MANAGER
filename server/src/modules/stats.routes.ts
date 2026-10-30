@@ -3,19 +3,19 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { DateTime } from 'luxon';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
-import { parse, uuid } from '../lib/validate.js';
+import { isoDate, parse, uuid } from '../lib/validate.js';
 import { requireUser, STAFF_ROLES, userOf } from '../plugins/auth.js';
 import { summarize } from '../attendance/engine.js';
 import { getDayRecords, getTenant } from '../attendance/service.js';
-import { fighterCards, serialGaps } from '../stats/service.js';
+import { employeeCards, fighterCards, serialGaps } from '../stats/service.js';
 import { currentCutoff, dailyTrend, overtimeLeaders } from '../stats/dashboard.js';
 
 export default async function statsRoutes(app: FastifyInstance) {
   const staff = { preHandler: requireUser(STAFF_ROLES) };
 
   app.get('/api/stats/cards', staff, async (req) => {
-    const q = parse(z.object({ days: z.coerce.number().int().min(7).max(365).default(30), employeeId: uuid.optional() }), req.query);
-    return fighterCards(userOf(req).tenantId, q.days, q.employeeId);
+    const q = parse(z.object({ days: z.coerce.number().int().min(7).max(365).default(30), employeeId: uuid.optional(), from: isoDate.optional(), to: isoDate.optional() }), req.query);
+    return q.from && q.to ? employeeCards(userOf(req).tenantId, q.from, q.to, q.employeeId) : fighterCards(userOf(req).tenantId, q.days, q.employeeId);
   });
 
   /** Admin dashboard: KPIs + 14-day attendance trend. */

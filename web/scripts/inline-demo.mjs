@@ -9,7 +9,7 @@ const js = html.match(/<script type="module" crossorigin src="([^"]+)"><\/script
 const css = html.match(/<link rel="stylesheet" crossorigin href="([^"]+)">/)[1];
 const script = read(js).replace(/<\/script/gi, '<\\/script');
 const out = `<title>AI Manager HR</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&family=Manrope:wght@400;500;600;700;800&display=swap">
 <style>${read(css)}</style>
 <div id="root"></div>
 <script type="module">${script}</script>

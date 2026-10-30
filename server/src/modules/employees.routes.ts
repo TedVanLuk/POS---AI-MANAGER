@@ -12,7 +12,7 @@ import { hashSecret } from './auth.routes.js';
 const employeeBody = z.object({
   employeeNo: z.string().trim().min(1).max(32),
   firstName: z.string().trim().min(1),
-  lastName: z.string().trim().min(1),
+  lastName: z.string().trim().max(60).default(''),
   position: z.string().trim().nullish(),
   department: z.string().trim().nullish(),
   branchId: uuid.nullish(),
@@ -27,7 +27,15 @@ const employeeBody = z.object({
   pagibigNo: z.string().nullish(),
   hireDate: isoDate.nullish(),
   active: z.boolean().default(true),
+  phone: z.string().trim().max(40).nullish(),
+  facebook: z.string().trim().max(200).nullish(),
+  address: z.string().trim().max(300).nullish(),
+  idType: z.string().trim().max(60).nullish(),
+  idNumber: z.string().trim().max(60).nullish(),
+  weekPattern: z.array(z.string().trim().max(16)).length(7).optional(),
 });
+const imageDataUrl = z.string().max(600_000, 'Image is too large — use one under 400 KB')
+  .regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/, 'Image must be a JPEG, PNG or WebP');
 
 export async function findEmployee(tenantId: string, id: string) {
   const [e] = await db.select().from(schema.employees).where(and(eq(schema.employees.tenantId, tenantId), eq(schema.employees.id, id)));
@@ -37,6 +45,8 @@ export async function findEmployee(tenantId: string, id: string) {
 
 /** Never expose secrets (PIN hash) to the client. */
 export const publicEmployee = ({ pinHash, ...e }: typeof schema.employees.$inferSelect) => ({ ...e, hasPin: !!pinHash });
+/** List view: no ID scan (large, sensitive) — only whether one is on file. */
+const listEmployee = (e: typeof schema.employees.$inferSelect) => { const { idPhotoUrl, ...rest } = publicEmployee(e); return { ...rest, hasIdPhoto: !!idPhotoUrl }; };
 
 export default async function employeeRoutes(app: FastifyInstance) {
   const staff = { preHandler: requireUser(STAFF_ROLES) };
@@ -54,7 +64,7 @@ export default async function employeeRoutes(app: FastifyInstance) {
       .leftJoin(schema.workSchedules, eq(schema.workSchedules.id, schema.employees.scheduleId))
       .where(eq(schema.employees.tenantId, p.tenantId))
       .orderBy(asc(schema.employees.lastName));
-    return rows.map((r) => ({ ...publicEmployee(r.employee), branchName: r.branchName, scheduleName: r.scheduleName, fingerprints: r.fingerprints }));
+    return rows.map((r) => ({ ...listEmployee(r.employee), branchName: r.branchName, scheduleName: r.scheduleName, fingerprints: r.fingerprints }));
   });
 
   app.get('/api/employees/:id', staff, async (req) => {
@@ -64,7 +74,8 @@ export default async function employeeRoutes(app: FastifyInstance) {
     const fps = await db.select({ id: schema.fingerprintTemplates.id, finger: schema.fingerprintTemplates.finger, format: schema.fingerprintTemplates.format, quality: schema.fingerprintTemplates.quality, createdAt: schema.fingerprintTemplates.createdAt })
       .from(schema.fingerprintTemplates).where(eq(schema.fingerprintTemplates.employeeId, id));
     const [login] = await db.select({ email: schema.users.email }).from(schema.users).where(eq(schema.users.employeeId, id));
-    return { ...publicEmployee(e), fingerprints: fps, loginEmail: login?.email ?? null };
+    const [verifier] = e.idVerifiedBy ? await db.select({ name: schema.users.name }).from(schema.users).where(eq(schema.users.id, e.idVerifiedBy)) : [];
+    return { ...publicEmployee(e), fingerprints: fps, loginEmail: login?.email ?? null, idVerifiedByName: verifier?.name ?? null };
   });
 
   app.post('/api/employees', admin, async (req, reply) => {
@@ -132,6 +143,29 @@ export default async function employeeRoutes(app: FastifyInstance) {
     await findEmployee(p.tenantId, id);
     await db.update(schema.employees).set({ photoUrl }).where(eq(schema.employees.id, id));
     await audit(p, { entity: 'employee', entityId: id, action: photoUrl ? 'set_photo' : 'remove_photo' }, db, req.ip);
+    return { ok: true };
+  });
+
+  /** Scan or photo of the employee's ID, for verification. Clears any earlier verification. */
+  app.put('/api/employees/:id/id-photo', admin, async (req) => {
+    const p = userOf(req);
+    const { id } = parse(z.object({ id: uuid }), req.params);
+    const { idPhotoUrl } = parse(z.object({ idPhotoUrl: imageDataUrl.nullable() }), req.body);
+    await findEmployee(p.tenantId, id);
+    await db.update(schema.employees).set({ idPhotoUrl, idVerifiedAt: null, idVerifiedBy: null }).where(eq(schema.employees.id, id));
+    await audit(p, { entity: 'employee', entityId: id, action: idPhotoUrl ? 'set_id_photo' : 'remove_id_photo' }, db, req.ip);
+    return { ok: true };
+  });
+
+  /** Mark the ID as checked against the person (or undo). */
+  app.post('/api/employees/:id/verify-id', admin, async (req) => {
+    const p = userOf(req);
+    const { id } = parse(z.object({ id: uuid }), req.params);
+    const { verified } = parse(z.object({ verified: z.boolean() }), req.body);
+    const e = await findEmployee(p.tenantId, id);
+    if (verified && (!e.idNumber || !e.idPhotoUrl)) throw badRequest('Add the ID type, number and a photo of the ID before verifying');
+    await db.update(schema.employees).set(verified ? { idVerifiedAt: new Date(), idVerifiedBy: p.userId } : { idVerifiedAt: null, idVerifiedBy: null }).where(eq(schema.employees.id, id));
+    await audit(p, { entity: 'employee', entityId: id, action: verified ? 'verify_id' : 'unverify_id' }, db, req.ip);
     return { ok: true };
   });
 

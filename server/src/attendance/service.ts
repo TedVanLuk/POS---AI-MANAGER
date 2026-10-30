@@ -4,6 +4,7 @@ import { db, schema } from '../db/index.js';
 import { notFound } from '../lib/errors.js';
 import { withDefaults } from '../settings.js';
 import { buildDailyRecords, summarize, type DayRecord, type ScheduleInput } from './engine.js';
+import { restDaysFromPattern } from '../stats/roster.js';
 
 export const DEFAULT_SCHEDULE: ScheduleInput = { startTime: '09:00', endTime: '18:00', breakMinutes: 60, graceMinutes: 5, restDays: [7] };
 
@@ -43,9 +44,15 @@ export async function getDayRecords(tenantId: string, from: string, to: string, 
   const result = new Map<string, DayRecord[]>();
   for (const e of emps) {
     const s = e.scheduleId ? scheduleById.get(e.scheduleId) : undefined;
+    // Without a shift template, use the department's usual hours and the person's usual week (roster).
+    const dept = tenant.settings.departments?.find((d) => d.name === e.department);
     const schedule: ScheduleInput = s
       ? { startTime: s.startTime, endTime: s.endTime, breakMinutes: s.breakMinutes, graceMinutes: s.graceMinutes, restDays: s.restDays }
-      : DEFAULT_SCHEDULE;
+      : {
+        ...DEFAULT_SCHEDULE,
+        ...(dept ? { startTime: dept.shiftStart, endTime: dept.shiftEnd } : {}),
+        restDays: restDaysFromPattern(e.weekPattern) ?? DEFAULT_SCHEDULE.restDays,
+      };
     const records = buildDailyRecords({
       punches: punches.filter((p) => p.employeeId === e.id).map((p) => ({ type: p.type, at: p.punchedAt })),
       schedule,

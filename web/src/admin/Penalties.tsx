@@ -21,7 +21,7 @@ function describeRule(c: RuleConfig) {
   }
 }
 
-export default function Penalties() {
+export default function Penalties({ embedded }: { embedded?: boolean }) {
   const { me } = useAuth();
   const [status, setStatus] = useState<'pending' | 'approved' | 'waived' | ''>('pending');
   const list = useApi<Penalty[]>(`/api/penalties${status ? `?status=${status}` : ''}`);
@@ -37,7 +37,7 @@ export default function Penalties() {
   return (
     <>
       <div className="page-head">
-        <h1>Penalties</h1>
+        {embedded ? <h2 style={{ margin: 0 }}>Penalties & disciplinary deductions</h2> : <h1>Penalties</h1>}
         <div className="spacer" />
         <button className="btn" onClick={async () => { const r = await api.post<{ created: number }>('/api/penalties/generate', { from: daysAgoIso(30), to: todayIso() }); setMsg(`${r.created} new penalties generated from attendance`); await list.reload(); }}>Scan last 30 days</button>
         <button className="btn primary" onClick={() => setManual(true)}>+ Disciplinary deduction</button>

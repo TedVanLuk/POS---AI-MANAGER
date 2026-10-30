@@ -53,7 +53,7 @@ export default function Dashboard() {
   const lateDays = d ? d.trend.filter((x) => x.late > 0).length : 0;
 
   const attention = d ? [
-    { label: `${d.alerts.pendingPenalties} penalties to review`, to: '/admin/penalties', hot: d.alerts.pendingPenalties > 0, x: 2, y: 8, r: -12 },
+    { label: `${d.alerts.pendingPenalties} penalties to review`, to: '/admin/payroll?tab=penalties', hot: d.alerts.pendingPenalties > 0, x: 2, y: 8, r: -12 },
     { label: d.cutoff.run ? `Payroll ${short(d.cutoff.start)}–${short(d.cutoff.end)} · ${d.cutoff.run.status}` : `Payroll ${short(d.cutoff.start)}–${short(d.cutoff.end)} not started`, to: d.cutoff.run ? `/admin/payroll/${d.cutoff.run.id}` : '/admin/payroll', hot: !d.cutoff.run, x: 36, y: 6, r: 6 },
     { label: `${d.alerts.missingSerials} missing OS serials`, to: '/admin/efficiency', hot: d.alerts.missingSerials > 0, x: 8, y: 44, r: 4 },
     { label: `${d.alerts.missingTimeouts} missing time-outs`, to: '/admin/attendance', hot: d.alerts.missingTimeouts > 0, x: 50, y: 40, r: -16 },
@@ -201,7 +201,7 @@ export default function Dashboard() {
 
         {/* Needs attention */}
         <section className="card d-attn">
-          <div className="card-head"><h2>Needs attention</h2><span className="spacer" /><Link to="/admin/penalties" className="icon-btn" style={{ width: 30, height: 30 }} aria-label="Open penalties"><Icon name="arrowUpRight" /></Link></div>
+          <div className="card-head"><h2>Needs attention</h2><span className="spacer" /><Link to="/admin/payroll?tab=penalties" className="icon-btn" style={{ width: 30, height: 30 }} aria-label="Open penalties"><Icon name="arrowUpRight" /></Link></div>
           <div className="chips-cloud">
             {attention.map((a) => (
               <Link key={a.label} to={a.to} className={a.hot ? 'hot' : 'ok'} style={{ transform: `rotate(${a.r / 2.5}deg)` }}>{a.label}</Link>

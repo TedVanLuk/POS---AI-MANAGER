@@ -7,7 +7,7 @@ interface Server { employeeId: string; name: string; slips: number; voids: numbe
 interface Eff { servers: Server[]; serialGaps: { prefix: string; missing: string[]; range: [string, string] }[] }
 
 /** Server (waiter) efficiency from order slips — OS serials entered by each server. */
-export default function Efficiency() {
+export default function Efficiency({ embedded }: { embedded?: boolean }) {
   const [from, setFrom] = useState(daysAgoIso(13));
   const [to, setTo] = useState(todayIso());
   const data = useApi<Eff>(`/api/efficiency?from=${from}&to=${to}`);
@@ -31,7 +31,7 @@ export default function Efficiency() {
   return (
     <>
       <div className="page-head">
-        <h1>Server efficiency</h1>
+        {embedded ? <h2 style={{ margin: 0 }}>Order slips · OS serial check</h2> : <h1>Server efficiency</h1>}
         <label className="field">From<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
         <label className="field">To<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
         <div className="spacer" />

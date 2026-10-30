@@ -7,7 +7,8 @@ interface PayrollSettings {
   frequency: string; workDaysPerYear: number; hoursPerDay: number; statutorySchedule: string;
   components: Record<string, boolean>; nightDiffStart: string; nightDiffEnd: string; nightDiffRate: number; minOvertimeMinutes: number;
 }
-interface SettingsRes { name: string; timezone: string; settings: { payroll: PayrollSettings } }
+interface Department { name: string; group: string; dailyRate: number; shiftStart: string; shiftEnd: string }
+interface SettingsRes { name: string; timezone: string; settings: { payroll: PayrollSettings; departments?: Department[] } }
 interface Device { id: string; name: string; driver: string; active: boolean; lastSeenAt: string | null; createdAt: string }
 interface Holiday { id: string; date: string; name: string; type: string }
 interface Schedule { id: string; name: string; startTime: string; endTime: string; breakMinutes: number; graceMinutes: number; restDays: number[] }
@@ -22,19 +23,60 @@ const COMPONENT_LABELS: Record<string, string> = {
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default function Settings() {
-  const [tab, setTab] = useState<'payroll' | 'schedules' | 'holidays' | 'devices' | 'audit'>('payroll');
+  const [tab, setTab] = useState<'payroll' | 'departments' | 'schedules' | 'holidays' | 'devices' | 'audit'>('payroll');
   return (
     <>
       <div className="page-head"><h1>Settings</h1></div>
       <div className="tabs">
-        {(['payroll', 'schedules', 'holidays', 'devices', 'audit'] as const).map((t) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{{ payroll: 'Payroll components', schedules: 'Work schedules', holidays: 'Holidays', devices: 'Kiosk devices', audit: 'Audit log' }[t]}</button>)}
+        {(['payroll', 'departments', 'schedules', 'holidays', 'devices', 'audit'] as const).map((t) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{{ payroll: 'Payroll components', departments: 'Departments & rates', schedules: 'Work schedules', holidays: 'Holidays', devices: 'Kiosk devices', audit: 'Audit log' }[t]}</button>)}
       </div>
       {tab === 'payroll' && <PayrollSettingsTab />}
+      {tab === 'departments' && <DepartmentsTab />}
       {tab === 'schedules' && <SchedulesTab />}
       {tab === 'holidays' && <HolidaysTab />}
       {tab === 'devices' && <DevicesTab />}
       {tab === 'audit' && <AuditTab />}
     </>
+  );
+}
+
+/** Departments as on the weekly schedule: group, daily rate ("Amount") and usual shift hours. */
+function DepartmentsTab() {
+  const s = useApi<SettingsRes>('/api/settings');
+  const [rows, setRows] = useState<Department[] | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const list = rows ?? s.data?.settings.departments ?? [];
+  const set = (i: number, patch: Partial<Department>) => setRows(list.map((d, j) => (j === i ? { ...d, ...patch } : d)));
+  const save = async () => {
+    try { await api.patch('/api/settings', { departments: list.filter((d) => d.name.trim()) }); await s.reload(); setRows(null); setMsg('Saved — schedule costs and projections use the new rates'); }
+    catch (e) { setMsg((e as Error).message); }
+  };
+  if (!s.data) return <div className="muted">Loading…</div>;
+  return (
+    <div className="card table-wrap">
+      <div className="card-head"><h2>Departments & daily rates</h2><span className="spacer" />{msg && <span className="muted small">{msg}</span>}</div>
+      <table>
+        <thead><tr><th>Department</th><th>Group</th><th className="num">Daily rate (₱)</th><th>Shift start</th><th>Shift end</th><th /></tr></thead>
+        <tbody>
+          {list.map((d, i) => (
+            <tr key={i}>
+              <td><input value={d.name} onChange={(e) => set(i, { name: e.target.value })} aria-label="Department name" /></td>
+              <td><input value={d.group} onChange={(e) => set(i, { group: e.target.value })} aria-label="Group" /></td>
+              <td className="num"><input type="number" min={0} value={d.dailyRate} onChange={(e) => set(i, { dailyRate: Number(e.target.value) })} style={{ width: 110, textAlign: 'right' }} aria-label={`${d.name} daily rate`} /></td>
+              <td><input type="time" value={d.shiftStart} onChange={(e) => set(i, { shiftStart: e.target.value })} aria-label="Shift start" /></td>
+              <td><input type="time" value={d.shiftEnd} onChange={(e) => set(i, { shiftEnd: e.target.value })} aria-label="Shift end" /></td>
+              <td><button className="btn sm danger" onClick={() => setRows(list.filter((_, j) => j !== i))}>Remove</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="row" style={{ marginTop: 12 }}>
+        <button className="btn" onClick={() => setRows([...list, { name: '', group: list[list.length - 1]?.group ?? 'Operational staff', dailyRate: 0, shiftStart: '20:00', shiftEnd: '04:00' }])}>+ Add department</button>
+        <div className="spacer" />
+        {rows && <button className="btn" onClick={() => setRows(null)}>Discard</button>}
+        <button className="btn primary" disabled={!rows} onClick={save}>Save departments</button>
+      </div>
+    </div>
   );
 }
 

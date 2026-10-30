@@ -34,7 +34,8 @@ function Radar({ attrs }: { attrs: Record<AttrKey, number | null> }) {
 /** Employee Card: overall rating, picture, radar and the seven attribute scores. */
 export function EmployeeCard({ card, onClick }: { card: CardData; onClick?: () => void }) {
   return (
-    <div className={`fcard tier-${card.tier}`} onClick={onClick} style={{ cursor: onClick ? 'pointer' : undefined }}>
+    <div className={`fcard tier-${card.tier}${onClick ? ' selectable' : ''}`} onClick={onClick}
+      {...(onClick ? { role: 'button', tabIndex: 0, 'aria-label': `Open performance summary for ${card.name}`, onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } } : {})}>
       <div className="fc-top">
         <div className="fc-rating">
           <div className="ovr">{card.overall}</div>

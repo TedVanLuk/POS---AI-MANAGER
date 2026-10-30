@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { api, daysAgoIso, fmtDateTime, fmtTime, hm, todayIso } from '../api';
 import { isAdmin, useAuth } from '../auth';
 import { useApi } from '../hooks';
@@ -12,6 +12,7 @@ import type { DayRec } from './Attendance';
 
 interface Employee extends EmployeeInput {
   photoUrl?: string | null;
+  idPhotoUrl?: string | null; idVerifiedAt?: string | null; idVerifiedByName?: string | null;
   id: string; hasPin: boolean; biometricConsentAt: string | null; loginEmail: string | null;
   fingerprints: { id: string; finger: string; format: string; quality: number | null; createdAt: string }[];
 }
@@ -23,9 +24,10 @@ const NOTE_BADGE: Record<string, string> = { commendation: 'good', coaching: 'in
 export default function EmployeeDetail() {
   const { id } = useParams();
   const { me } = useAuth();
+  const nav = useNavigate();
   const emp = useApi<Employee>(`/api/employees/${id}`);
   const card = useApi<CardData[]>(`/api/stats/cards?employeeId=${id}`);
-  const [tab, setTab] = useState<'overview' | 'attendance' | 'notes' | 'biometrics' | 'edit'>('overview');
+  const [tab, setTab] = useState<'overview' | 'id' | 'attendance' | 'notes' | 'biometrics' | 'edit'>('overview');
   const [pendingEdit, setPendingEdit] = useState<Record<string, unknown> | null>(null);
   const e = emp.data;
   if (emp.error) return <div className="error">{emp.error}</div>;
@@ -38,14 +40,15 @@ export default function EmployeeDetail() {
         {e.active === false && <span className="badge">Inactive</span>}
       </div>
       <div className="tabs">
-        {(['overview', 'attendance', 'notes', 'biometrics', ...(isAdmin(me?.role) ? ['edit'] : [])] as const).map((t) => (
-          <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t as typeof tab)}>{{ overview: 'Overview', attendance: 'Attendance', notes: 'Management notes', biometrics: 'Fingerprint & access', edit: 'Edit details' }[t]}</button>
+        {(['overview', 'id', 'attendance', 'notes', 'biometrics', ...(isAdmin(me?.role) ? ['edit'] : [])] as const).map((t) => (
+          <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t as typeof tab)}>{{ overview: 'Overview', id: 'ID & contact', attendance: 'Attendance', notes: 'Management notes', biometrics: 'Fingerprint & access', edit: 'Edit details' }[t]}</button>
         ))}
       </div>
       {tab === 'overview' && (
         <div className="row" style={{ alignItems: 'flex-start', gap: '1.5rem' }}>
           <div style={{ display: 'grid', gap: 10, justifyItems: 'start' }}>
-            {card.data?.[0] && <EmployeeCard card={card.data[0]} />}
+            {card.data?.[0] && <EmployeeCard card={card.data[0]} onClick={() => nav(`/admin/performance/${e.id}`)} />}
+            <button className="pill-btn" onClick={() => nav(`/admin/performance/${e.id}`)}><Icon name="trophy" />Performance summary</button>
             {isAdmin(me?.role) && <PhotoEditor employeeId={e.id} name={`${e.firstName} ${e.lastName}`} hasPhoto={!!e.photoUrl} onSaved={async () => { await emp.reload(); await card.reload(); }} />}
           </div>
           <div className="card" style={{ flex: 1, minWidth: 280 }}>
@@ -54,6 +57,7 @@ export default function EmployeeDetail() {
           </div>
         </div>
       )}
+      {tab === 'id' && <IdContactTab e={e} admin={isAdmin(me?.role)} reload={emp.reload} />}
       {tab === 'attendance' && <AttendanceTab employeeId={e.id} />}
       {tab === 'notes' && <NotesTab employeeId={e.id} />}
       {tab === 'biometrics' && <BiometricsTab e={e} reload={emp.reload} />}
@@ -288,17 +292,24 @@ function BiometricsTab({ e, reload }: { e: Employee; reload: () => Promise<void>
 }
 
 /** Resize a picked image in the browser (max 320px, JPEG) so stored photos stay small. */
-async function toSmallJpeg(file: File): Promise<string> {
+async function toSmallJpeg(file: File, opts: { square?: boolean; max?: number } = { square: true, max: 320 }): Promise<string> {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = () => reject(new Error('That file is not an image we can read. Use a JPEG or PNG photo.')); i.src = url; });
-    const side = Math.min(img.naturalWidth, img.naturalHeight);
-    const size = Math.min(320, side);
     const canvas = document.createElement('canvas');
-    canvas.width = size; canvas.height = size;
-    // Centre-crop to a square so faces sit in the middle of the card.
-    canvas.getContext('2d')!.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
-    return canvas.toDataURL('image/jpeg', 0.85);
+    const max = opts.max ?? 320;
+    if (opts.square !== false) {
+      // Centre-crop to a square so faces sit in the middle of the card.
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      const size = Math.min(max, side);
+      canvas.width = size; canvas.height = size;
+      canvas.getContext('2d')!.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+    } else {
+      const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      canvas.width = Math.round(img.naturalWidth * scale); canvas.height = Math.round(img.naturalHeight * scale);
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+    }
+    return canvas.toDataURL('image/jpeg', 0.82);
   } finally { URL.revokeObjectURL(url); }
 }
 
@@ -318,6 +329,52 @@ function PhotoEditor({ employeeId, name, hasPhoto, onSaved }: { employeeId: stri
       </label>
       {hasPhoto && <button className="btn sm" disabled={busy} onClick={() => save(null)}>Remove photo</button>}
       {error && <div className="error small" style={{ width: '100%' }}>{error}</div>}
+    </div>
+  );
+}
+
+function IdContactTab({ e, admin, reload }: { e: Employee; admin: boolean; reload: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const run = async (fn: () => Promise<unknown>) => { setBusy(true); setError(null); try { await fn(); await reload(); } catch (err) { setError((err as Error).message); } finally { setBusy(false); } };
+  const fb = e.facebook?.trim();
+  const fbUrl = fb ? (/^https?:\/\//.test(fb) ? fb : fb.includes('facebook.com') ? `https://${fb}` : null) : null;
+  return (
+    <div className="grid cols-2">
+      <div className="card">
+        <div className="card-head"><h2>Working ID</h2><span className="spacer" />
+          {e.idVerifiedAt ? <span className="badge good">✓ Verified</span> : e.idPhotoUrl ? <span className="badge warn">! Waiting for verification</span> : <span className="badge">No ID on file</span>}
+        </div>
+        <dl className="kv">
+          <dt>ID type</dt><dd>{e.idType ?? '—'}</dd>
+          <dt>ID number</dt><dd>{e.idNumber ?? '—'}</dd>
+          <dt>Verified</dt><dd>{e.idVerifiedAt ? `${fmtDateTime(e.idVerifiedAt)} by ${e.idVerifiedByName ?? '—'}` : '—'}</dd>
+        </dl>
+        {e.idPhotoUrl ? <img className="id-photo" src={e.idPhotoUrl} alt={`ID of ${e.firstName}`} /> : <div className="id-photo empty">No ID picture uploaded</div>}
+        {admin && (
+          <div className="row" style={{ marginTop: 10 }}>
+            <label className="pill-btn" style={{ cursor: busy ? 'wait' : 'pointer' }}>
+              <Icon name="camera" />{e.idPhotoUrl ? 'Replace ID picture' : 'Upload ID picture'}
+              <input type="file" accept="image/jpeg,image/png,image/webp" hidden disabled={busy}
+                onChange={async (ev) => { const f = ev.target.files?.[0]; ev.target.value = ''; if (!f) return; await run(async () => api.put(`/api/employees/${e.id}/id-photo`, { idPhotoUrl: await toSmallJpeg(f, { square: false, max: 900 }) })); }} />
+            </label>
+            {e.idPhotoUrl && !e.idVerifiedAt && <button className="btn primary" disabled={busy} onClick={() => run(() => api.post(`/api/employees/${e.id}/verify-id`, { verified: true }))}>Mark as verified</button>}
+            {e.idVerifiedAt && <button className="btn sm" disabled={busy} onClick={() => run(() => api.post(`/api/employees/${e.id}/verify-id`, { verified: false }))}>Undo verification</button>}
+            {e.idPhotoUrl && <button className="btn sm danger" disabled={busy} onClick={() => run(() => api.put(`/api/employees/${e.id}/id-photo`, { idPhotoUrl: null }))}>Remove picture</button>}
+          </div>
+        )}
+        {error && <div className="error small" style={{ marginTop: 6 }}>{error}</div>}
+        <p className="muted small">Verify by checking the picture and number against the original ID in person. ID pictures are personal data (RA 10173): only admins can see them.</p>
+      </div>
+      <div className="card">
+        <div className="card-head"><h2>Contact</h2></div>
+        <dl className="kv">
+          <dt>Phone</dt><dd>{e.phone ? <span className="selectable">{e.phone}</span> : '—'}</dd>
+          <dt>Facebook</dt><dd>{fb ? (fbUrl ? <a href={fbUrl} target="_blank" rel="noreferrer">{fb}</a> : fb) : '—'}</dd>
+          <dt>Address</dt><dd>{e.address ?? '—'}</dd>
+        </dl>
+        <p className="muted small">Edit contact details and the ID number on the "Edit details" tab.</p>
+      </div>
     </div>
   );
 }

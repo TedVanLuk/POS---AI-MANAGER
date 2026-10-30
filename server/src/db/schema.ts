@@ -49,6 +49,8 @@ export type TenantSettings = {
     nightDiffRate: number; // 0.10
     minOvertimeMinutes: number; // OT counted only when >= this
   };
+  /** Departments with their group (e.g. Operational staff), planning daily rate and usual shift. */
+  departments?: { name: string; group: string; dailyRate: number; shiftStart: string; shiftEnd: string }[];
 };
 
 export const tenants = pgTable('tenants', {
@@ -109,6 +111,17 @@ export const employees = pgTable('employees', {
   biometricConsentAt: timestamp('biometric_consent_at', { withTimezone: true }),
   /** Profile picture as a small JPEG data URL (resized in the browser to ≤ 320px). */
   photoUrl: text('photo_url'),
+  phone: text('phone'),
+  facebook: text('facebook'),
+  address: text('address'),
+  /** Government / company ID used for verification (e.g. PhilSys, UMID, driver's licence). */
+  idType: text('id_type'),
+  idNumber: text('id_number'),
+  idPhotoUrl: text('id_photo_url'),
+  idVerifiedAt: timestamp('id_verified_at', { withTimezone: true }),
+  idVerifiedBy: uuid('id_verified_by'),
+  /** Usual week, Mon→Sun, as roster codes (D duty, O off, A all in, L leave, R reception, N n/a, X no duty, or a set time). */
+  weekPattern: jsonb('week_pattern').$type<string[]>().notNull().default([]),
   createdAt: createdAt(),
 }, (t) => [uniqueIndex('employees_tenant_no').on(t.tenantId, t.employeeNo)]);
 
@@ -315,3 +328,56 @@ export const auditLogs = pgTable('audit_logs', {
   ip: text('ip'),
   createdAt: createdAt(),
 }, (t) => [index('audit_entity').on(t.tenantId, t.entity, t.entityId)]);
+
+/** Per-week roster changes on top of each employee's usual week. */
+export const rosterEntries = pgTable('roster_entries', {
+  id: id(),
+  tenantId: tenantId(),
+  employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'cascade' }),
+  date: date('date').notNull(),
+  code: text('code').notNull(),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex('roster_emp_date').on(t.employeeId, t.date)]);
+
+/** Servers tracker: daily orders, sales commissions (packages), lady's drinks and PO per server. */
+export const serverStats = pgTable('server_stats', {
+  id: id(),
+  tenantId: tenantId(),
+  employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'cascade' }),
+  date: date('date').notNull(),
+  orders: integer('orders').notNull().default(0),
+  salesComms: integer('sales_comms').notNull().default(0),
+  lds: integer('lds').notNull().default(0),
+  po: integer('po').notNull().default(0),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex('server_stats_emp_date').on(t.employeeId, t.date)]);
+
+export type ReviewRatings = Partial<Record<
+  'serviceQuality' | 'productKnowledge' | 'problemSolving' | 'timeManagement' | 'adaptability' | 'workEthic'
+  | 'leadership' | 'communication' | 'reliability' | 'professionalism' | 'customerOrientation' | 'teamwork', number>>;
+
+/** Management performance review on a 5-star scale (half stars allowed). */
+export const performanceReviews = pgTable('performance_reviews', {
+  id: id(),
+  tenantId: tenantId(),
+  employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'cascade' }),
+  reviewerId: uuid('reviewer_id').notNull().references(() => users.id),
+  periodStart: date('period_start').notNull(),
+  periodEnd: date('period_end').notNull(),
+  ratings: jsonb('ratings').$type<ReviewRatings>().notNull().default({}),
+  strengths: jsonb('strengths').$type<string[]>().notNull().default([]),
+  weaknesses: jsonb('weaknesses').$type<string[]>().notNull().default([]),
+  opportunities: jsonb('opportunities').$type<string[]>().notNull().default([]),
+  threats: jsonb('threats').$type<string[]>().notNull().default([]),
+  notes: text('notes'),
+  assists: integer('assists').notNull().default(0),
+  employeeOfMonth: integer('employee_of_month').notNull().default(0),
+  trainingCompleted: integer('training_completed').notNull().default(0),
+  crossTrained: integer('cross_trained').notNull().default(0),
+  skillLevel: text('skill_level'),
+  promotionReady: boolean('promotion_ready').notNull().default(false),
+  managerName: text('manager_name'),
+  createdAt: createdAt(),
+});

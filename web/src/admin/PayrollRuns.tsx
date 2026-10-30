@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, peso } from '../api';
 import { isAdmin, useAuth } from '../auth';
 import { useApi } from '../hooks';
 import { Modal } from '../components/Modal';
+import Penalties from './Penalties';
 
 interface Run { id: string; periodStart: string; periodEnd: string; payDate: string | null; frequency: string; cutoff: number; status: string; employees: number; gross: number; net: number }
 export const STATUS_BADGE: Record<string, string> = { draft: '', review: 'info', approved: 'good', paid: 'good', void: 'bad' };
@@ -19,7 +20,28 @@ function nextPeriod(runs: Run[]) {
   return { periodStart: fmt(new Date(y, m, 16)), periodEnd: fmt(new Date(y, m + 1, 0)) };
 }
 
+const TABS = [['runs', 'Payroll runs'], ['penalties', 'Penalties']] as const;
+
+/** Payroll section: cutoff runs, plus the penalties that feed their deductions. */
 export default function PayrollRuns() {
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') === 'penalties' ? 'penalties' : 'runs';
+  const pending = useApi<unknown[]>('/api/penalties?status=pending');
+  return (
+    <>
+      <div className="tabs" role="tablist" aria-label="Payroll sections">
+        {TABS.map(([k, label]) => (
+          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'active' : ''} onClick={() => setParams(k === 'runs' ? {} : { tab: k }, { replace: true })}>
+            {label}{k === 'penalties' && pending.data?.length ? ` · ${pending.data.length} to review` : ''}
+          </button>
+        ))}
+      </div>
+      {tab === 'penalties' ? <Penalties embedded /> : <Runs />}
+    </>
+  );
+}
+
+function Runs() {
   const { me } = useAuth();
   const nav = useNavigate();
   const runs = useApi<Run[]>('/api/payroll/runs');
