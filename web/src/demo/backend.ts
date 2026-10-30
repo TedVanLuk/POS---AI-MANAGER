@@ -9,6 +9,8 @@ import { computePayslip, type LineOverride, type PayLine } from '../../../server
 import { evaluatePenalties } from '../../../server/src/penalties/engine';
 import { computeCard, median } from '../../../server/src/stats/engine';
 import { currentCutoff, dailyTrend, overtimeLeaders } from '../../../server/src/stats/dashboard';
+import { weeklyPlan } from '../../../server/src/stats/workforce';
+import { tablesFor } from '../../../server/src/payroll/statutory-ph';
 import { DEFAULT_SETTINGS, withDefaults } from '../../../server/src/settings';
 import type { PenaltyRuleConfig, TenantSettings } from '../../../server/src/db/schema';
 import { ApiError } from '../api';
@@ -21,7 +23,7 @@ interface Employee {
   allowances: { code: string; label: string; amount: number; taxable?: boolean }[];
   exemptions: { withholdingTax?: boolean; sss?: boolean; philhealth?: boolean; pagibig?: boolean };
   tin: string | null; sssNo: string | null; philhealthNo: string | null; pagibigNo: string | null;
-  hireDate: string | null; active: boolean; pin: string | null; biometricConsentAt: string | null; createdAt: string;
+  hireDate: string | null; active: boolean; pin: string | null; biometricConsentAt: string | null; photoUrl?: string | null; createdAt: string;
 }
 interface User { id: string; email: string; name: string; password: string; role: Role; employeeId: string | null }
 interface Device { id: string; name: string; driver: string; active: boolean; lastSeenAt: string | null; createdAt: string; token: string; branchId: string | null }
@@ -48,7 +50,7 @@ interface Store {
 }
 
 const STORE_KEY = 'aim.demo.store.v1';
-const STORE_VERSION = 2;
+const STORE_VERSION = 3;
 export const DEMO_DEVICE_TOKEN = 'demo-kiosk-token-change-me-0000000001';
 const TZ = 'Asia/Manila';
 
@@ -277,7 +279,7 @@ function fighterCards(days = 30, employeeId?: string) {
     const warnings = notes.filter((n) => n.category === 'warning' || n.category === 'incident').length;
     const rating = notes.reduce((a, n) => a + n.rating, 0);
     const card = computeCard({ ...totals, approvedPenalties, warningNotes: warnings, noteRatingSum: rating, efficiency: ef }, team);
-    return { employeeId: e.id, name: name(e), employeeNo: e.employeeNo, position: e.position, ...card, period: { from, to, days }, raw: { ...totals, efficiency: ef, approvedPenalties, noteRating: rating, warnings } };
+    return { employeeId: e.id, name: name(e), employeeNo: e.employeeNo, position: e.position, department: e.department, photoUrl: e.photoUrl ?? null, ...card, period: { from, to, days }, raw: { ...totals, efficiency: ef, approvedPenalties, noteRating: rating, warnings } };
   }).sort((a, b) => b.overall - a.overall);
 }
 
@@ -386,6 +388,31 @@ on('POST', '/api/employees/:id/login', (c, p, _q, b) => {
   audit(c, { entity: 'employee', entityId: e.id, action: 'set_login', after: { email } });
   return { ok: true };
 });
+on('PUT', '/api/employees/:id/photo', (c, p, _q, b) => {
+  requireUser(c, ADMIN);
+  const e = findEmp(p.id);
+  const url = b.photoUrl as string | null;
+  if (url !== null && (typeof url !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(url))) fail(400, 'Photo must be a JPEG, PNG or WebP image');
+  if (url && url.length > 400_000) fail(400, 'Photo is too large — use an image under 300 KB');
+  e.photoUrl = url;
+  audit(c, { entity: 'employee', entityId: e.id, action: url ? 'set_photo' : 'remove_photo' });
+  return { ok: true };
+});
+on('GET', '/api/workforce/week', (c, _p, q) => {
+  requireUser(c, STAFF);
+  const s = store();
+  const start = DateTime.fromISO(q.get('start') ?? today(), { zone: TZ }).startOf('week');
+  const end = start.plus({ days: 6 }).toISODate()!;
+  return weeklyPlan(
+    s.employees.filter((e) => e.active).map((e) => {
+      const sch = s.schedules.find((x) => x.id === e.scheduleId);
+      return { ...e, schedule: sch ? { name: sch.name, startTime: sch.startTime, endTime: sch.endTime, restDays: sch.restDays } : null };
+    }),
+    start.toISODate()!,
+    s.holidays.filter((h) => h.date >= start.toISODate()! && h.date <= end).map((h) => ({ date: h.date, type: h.type, name: h.name })),
+    settings().payroll, tablesFor(start.toISODate()!),
+  );
+});
 on('POST', '/api/employees/:id/biometric-consent', (c, p) => { requireUser(c, ADMIN); const e = findEmp(p.id); e.biometricConsentAt = nowIso(); audit(c, { entity: 'employee', entityId: e.id, action: 'biometric_consent' }); return { ok: true }; });
 on('POST', '/api/employees/:id/fingerprints', (c, p, _q, b) => {
   requireUser(c, ADMIN);
@@ -440,10 +467,10 @@ function recordPunch(c: Ctx, dev: Device, emp: Employee, o: { clientUuid: string
   if (o.method === 'pin') audit(c, { entity: 'attendance', entityId: punch.id, action: 'pin_punch', after: { employeeId: emp.id, type } });
   return { punch, duplicate: false };
 }
-const punchReply = (emp: Employee, r: { punch: Punch; duplicate: boolean }) => ({ duplicate: r.duplicate, type: r.punch.type, punchedAt: r.punch.punchedAt, employee: { id: emp.id, name: name(emp), employeeNo: emp.employeeNo, position: emp.position }, week: weekSummary(emp.id) });
+const punchReply = (emp: Employee, r: { punch: Punch; duplicate: boolean }) => ({ duplicate: r.duplicate, type: r.punch.type, punchedAt: r.punch.punchedAt, employee: { id: emp.id, name: name(emp), employeeNo: emp.employeeNo, position: emp.position, photoUrl: emp.photoUrl ?? null }, week: weekSummary(emp.id) });
 on('POST', '/api/kiosk/punch', (c, _p, _q, b) => { const d = requireDevice(c); const e = findEmp(String(b.employeeId)); if (!e.active) notFound('Employee'); return punchReply(e, recordPunch(c, d, e, { clientUuid: String(b.clientUuid), punchedAt: b.punchedAt as string, method: 'fingerprint', matchScore: b.matchScore as number })); });
 on('POST', '/api/kiosk/pin-punch', (c, _p, _q, b) => { const d = requireDevice(c); const e = store().employees.find((x) => x.employeeNo === String(b.employeeNo).trim() && x.active); if (!e?.pin || e.pin !== b.pin) fail(401, 'Wrong employee number or PIN'); return punchReply(e!, recordPunch(c, d, e!, { clientUuid: String(b.clientUuid), punchedAt: b.punchedAt as string, method: 'pin' })); });
-on('POST', '/api/kiosk/week', (c, _p, _q, b) => { requireDevice(c); const e = findEmp(String(b.employeeId)); return { employee: { id: e.id, name: name(e), employeeNo: e.employeeNo, position: e.position }, week: weekSummary(e.id) }; });
+on('POST', '/api/kiosk/week', (c, _p, _q, b) => { requireDevice(c); const e = findEmp(String(b.employeeId)); return { employee: { id: e.id, name: name(e), employeeNo: e.employeeNo, position: e.position, photoUrl: e.photoUrl ?? null }, week: weekSummary(e.id) }; });
 
 // attendance
 on('GET', '/api/attendance/today', (c, _p, q) => {
@@ -456,7 +483,7 @@ on('GET', '/api/attendance/today', (c, _p, q) => {
     const r = records.get(e.id)![0];
     const last = punches.find((x) => x.employeeId === e.id);
     const status = last?.type === 'in' ? 'in' : last?.type === 'out' ? 'out' : r.dayType === 'rest' ? 'rest_day' : r.holiday ? 'holiday' : 'not_in';
-    return { employeeId: e.id, name: name(e), employeeNo: e.employeeNo, position: e.position, status, lastPunchAt: last?.punchedAt ?? null, record: r };
+    return { employeeId: e.id, name: name(e), employeeNo: e.employeeNo, position: e.position, photoUrl: e.photoUrl ?? null, status, lastPunchAt: last?.punchedAt ?? null, record: r };
   });
   return { date, counts: { total: rows.length, clockedIn: rows.filter((r) => r.status === 'in').length, late: rows.filter((r) => r.record.lateMinutes > 0).length, notIn: rows.filter((r) => r.status === 'not_in').length }, feed: punches.slice(0, 30).map((x) => ({ ...x, name: rows.find((r) => r.employeeId === x.employeeId)?.name })), rows };
 });
@@ -720,7 +747,10 @@ function seed(): Store {
   const branchId = s.branches[0].id;
   const daySched: Schedule = { id: uid(), name: 'Day 09:00–18:00', startTime: '09:00', endTime: '18:00', breakMinutes: 60, graceMinutes: 5, restDays: [7] };
   const midSched: Schedule = { id: uid(), name: 'Mid 14:00–23:00', startTime: '14:00', endTime: '23:00', breakMinutes: 60, graceMinutes: 5, restDays: [1] };
-  s.schedules.push(daySched, midSched);
+  const dayWed: Schedule = { id: uid(), name: 'Day 09:00–18:00 (Wed off)', startTime: '09:00', endTime: '18:00', breakMinutes: 60, graceMinutes: 5, restDays: [3] };
+  const midTue: Schedule = { id: uid(), name: 'Mid 14:00–23:00 (Tue off)', startTime: '14:00', endTime: '23:00', breakMinutes: 60, graceMinutes: 5, restDays: [2] };
+  const early: Schedule = { id: uid(), name: 'Early 06:00–15:00 (Sat off)', startTime: '06:00', endTime: '15:00', breakMinutes: 60, graceMinutes: 5, restDays: [6] };
+  s.schedules.push(daySched, midSched, dayWed, midTue, early);
   const owner: User = { id: uid(), email: 'admin@demo.ph', name: 'Maria Santos (Owner)', password: 'Admin123!', role: 'owner', employeeId: null };
   s.users.push(owner, { id: uid(), email: 'manager@demo.ph', name: 'Paolo Reyes (Manager)', password: 'Manager123!', role: 'manager', employeeId: null });
   const staff = [
@@ -732,6 +762,12 @@ function seed(): Store {
     { no: 'E-006', first: 'Grace', last: 'Torres', position: 'Cashier', dept: 'Front', pay: 'daily' as const, rate: 695, sch: daySched, lateBias: 0.08, speed: 1 },
     { no: 'E-007', first: 'Ramon', last: 'Aquino', position: 'Kitchen Supervisor', dept: 'Kitchen', pay: 'monthly' as const, rate: 28000, sch: daySched, lateBias: 0.05, speed: 1 },
     { no: 'E-008', first: 'Bea', last: 'Navarro', position: 'Restaurant Manager', dept: 'Management', pay: 'monthly' as const, rate: 45000, sch: daySched, lateBias: 0.0, speed: 1 },
+    { no: 'E-009', first: 'Jessa', last: 'Ramos', position: 'Server', dept: 'Service', pay: 'daily' as const, rate: 695, sch: dayWed, lateBias: 0.12, speed: 1.1 },
+    { no: 'E-010', first: 'Kevin', last: 'Bautista', position: 'Dishwasher', dept: 'Kitchen', pay: 'daily' as const, rate: 645, sch: midTue, lateBias: 0.2, speed: 1 },
+    { no: 'E-011', first: 'Rica', last: 'Santos', position: 'Prep Cook', dept: 'Kitchen', pay: 'daily' as const, rate: 720, sch: early, lateBias: 0.06, speed: 1 },
+    { no: 'E-012', first: 'Noel', last: 'Cruz', position: 'Barista', dept: 'Bar', pay: 'daily' as const, rate: 695, sch: early, lateBias: 0.1, speed: 1 },
+    { no: 'E-013', first: 'Mae', last: 'Flores', position: 'Bartender', dept: 'Bar', pay: 'daily' as const, rate: 760, sch: midTue, lateBias: 0.08, speed: 1 },
+    { no: 'E-014', first: 'Joy', last: 'Castillo', position: 'Cashier', dept: 'Front', pay: 'daily' as const, rate: 695, sch: midSched, lateBias: 0.05, speed: 1 },
   ];
   const created = nowIso();
   for (const x of staff) {

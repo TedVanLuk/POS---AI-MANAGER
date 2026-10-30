@@ -3,7 +3,7 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { peso } from '../api';
 import { isStaff, useAuth } from '../auth';
 import { useApi } from '../hooks';
-import { FighterCard, type CardData } from '../components/FighterCard';
+import { EmployeeCard, type CardData } from '../components/EmployeeCard';
 import { WeekStrip, type Week } from '../components/WeekStrip';
 
 interface Payslip { id: string; periodStart: string; periodEnd: string; payDate: string | null; gross: number; totalDeductions: number; net: number; lines: { code: string; label: string; category: string; quantity: number | null; amount: number }[] }
@@ -30,7 +30,7 @@ export default function MePage() {
       </div>
       <div className="card"><h2>This week</h2>{week.data ? <WeekStrip week={week.data} /> : <div className="muted">Loading…</div>}</div>
       <div className="row" style={{ alignItems: 'flex-start', marginTop: '1rem', gap: '1rem' }}>
-        {card.data && <FighterCard card={card.data} />}
+        {card.data && <EmployeeCard card={card.data} />}
         <div className="card" style={{ flex: 1, minWidth: 280 }}>
           <h2>Payslips</h2>
           {slips.data?.length === 0 && <div className="muted">No approved payslips yet.</div>}

@@ -13,6 +13,7 @@ import PayrollRun from './admin/PayrollRun';
 import Penalties from './admin/Penalties';
 import Efficiency from './admin/Efficiency';
 import Performance from './admin/Performance';
+import Schedules from './admin/Schedules';
 import AIChat from './admin/AIChat';
 import Settings from './admin/Settings';
 import Kiosk from './kiosk/Kiosk';
@@ -52,6 +53,7 @@ export default function App() {
         <Route path="penalties" element={<Penalties />} />
         <Route path="efficiency" element={<Efficiency />} />
         <Route path="performance" element={<Performance />} />
+        <Route path="schedules" element={<Schedules />} />
         <Route path="ai" element={<AIChat />} />
         <Route path="settings" element={<Settings />} />
       </Route>

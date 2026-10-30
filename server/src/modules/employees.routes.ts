@@ -121,6 +121,20 @@ export default async function employeeRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
+  /** Profile picture: a small image data URL (the browser resizes it), or null to remove. */
+  app.put('/api/employees/:id/photo', admin, async (req) => {
+    const p = userOf(req);
+    const { id } = parse(z.object({ id: uuid }), req.params);
+    const { photoUrl } = parse(z.object({
+      photoUrl: z.string().max(400_000, 'Photo is too large — use an image under 300 KB')
+        .regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/, 'Photo must be a JPEG, PNG or WebP image').nullable(),
+    }), req.body);
+    await findEmployee(p.tenantId, id);
+    await db.update(schema.employees).set({ photoUrl }).where(eq(schema.employees.id, id));
+    await audit(p, { entity: 'employee', entityId: id, action: photoUrl ? 'set_photo' : 'remove_photo' }, db, req.ip);
+    return { ok: true };
+  });
+
   app.post('/api/employees/:id/biometric-consent', admin, async (req) => {
     const p = userOf(req);
     const { id } = parse(z.object({ id: uuid }), req.params);

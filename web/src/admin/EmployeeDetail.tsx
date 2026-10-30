@@ -3,13 +3,15 @@ import { useParams } from 'react-router-dom';
 import { api, daysAgoIso, fmtDateTime, fmtTime, hm, todayIso } from '../api';
 import { isAdmin, useAuth } from '../auth';
 import { useApi } from '../hooks';
-import { FighterCard, type CardData } from '../components/FighterCard';
+import { EmployeeCard, type CardData } from '../components/EmployeeCard';
 import { ConfirmDialog, Modal, ReasonDialog } from '../components/Modal';
+import { Icon } from '../components/Icon';
 import { getDriver } from '../kiosk/drivers';
 import { EmployeeForm, type EmployeeInput } from './EmployeeForm';
 import type { DayRec } from './Attendance';
 
 interface Employee extends EmployeeInput {
+  photoUrl?: string | null;
   id: string; hasPin: boolean; biometricConsentAt: string | null; loginEmail: string | null;
   fingerprints: { id: string; finger: string; format: string; quality: number | null; createdAt: string }[];
 }
@@ -42,7 +44,10 @@ export default function EmployeeDetail() {
       </div>
       {tab === 'overview' && (
         <div className="row" style={{ alignItems: 'flex-start', gap: '1.5rem' }}>
-          {card.data?.[0] && <FighterCard card={card.data[0]} />}
+          <div style={{ display: 'grid', gap: 10, justifyItems: 'start' }}>
+            {card.data?.[0] && <EmployeeCard card={card.data[0]} />}
+            {isAdmin(me?.role) && <PhotoEditor employeeId={e.id} name={`${e.firstName} ${e.lastName}`} hasPhoto={!!e.photoUrl} onSaved={async () => { await emp.reload(); await card.reload(); }} />}
+          </div>
           <div className="card" style={{ flex: 1, minWidth: 280 }}>
             <h2>Last 30 days</h2>
             <RecordsTable employeeId={e.id} from={daysAgoIso(29)} to={todayIso()} compact />
@@ -278,6 +283,41 @@ function BiometricsTab({ e, reload }: { e: Employee; reload: () => Promise<void>
           {loginError && <div className="error">{loginError}</div>}
         </Modal>
       )}
+    </div>
+  );
+}
+
+/** Resize a picked image in the browser (max 320px, JPEG) so stored photos stay small. */
+async function toSmallJpeg(file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = () => reject(new Error('That file is not an image we can read. Use a JPEG or PNG photo.')); i.src = url; });
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    const size = Math.min(320, side);
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    // Centre-crop to a square so faces sit in the middle of the card.
+    canvas.getContext('2d')!.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+    return canvas.toDataURL('image/jpeg', 0.85);
+  } finally { URL.revokeObjectURL(url); }
+}
+
+function PhotoEditor({ employeeId, name, hasPhoto, onSaved }: { employeeId: string; name: string; hasPhoto: boolean; onSaved: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const save = async (photoUrl: string | null) => {
+    setBusy(true); setError(null);
+    try { await api.put(`/api/employees/${employeeId}/photo`, { photoUrl }); await onSaved(); } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+  };
+  return (
+    <div className="photo-edit">
+      <label className="pill-btn" style={{ cursor: busy ? 'wait' : 'pointer' }}>
+        <Icon name="camera" />{busy ? 'Saving…' : hasPhoto ? 'Change photo' : 'Add photo'}
+        <input type="file" accept="image/jpeg,image/png,image/webp" hidden disabled={busy} aria-label={`Photo of ${name}`}
+          onChange={async (ev) => { const f = ev.target.files?.[0]; ev.target.value = ''; if (!f) return; try { await save(await toSmallJpeg(f)); } catch (err) { setError((err as Error).message); } }} />
+      </label>
+      {hasPhoto && <button className="btn sm" disabled={busy} onClick={() => save(null)}>Remove photo</button>}
+      {error && <div className="error small" style={{ width: '100%' }}>{error}</div>}
     </div>
   );
 }

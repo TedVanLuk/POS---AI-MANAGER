@@ -107,6 +107,8 @@ export const employees = pgTable('employees', {
   /** Argon2 hash of a 4–6 digit PIN, fallback when the finger can't be read. */
   pinHash: text('pin_hash'),
   biometricConsentAt: timestamp('biometric_consent_at', { withTimezone: true }),
+  /** Profile picture as a small JPEG data URL (resized in the browser to ≤ 320px). */
+  photoUrl: text('photo_url'),
   createdAt: createdAt(),
 }, (t) => [uniqueIndex('employees_tenant_no').on(t.tenantId, t.employeeNo)]);
 

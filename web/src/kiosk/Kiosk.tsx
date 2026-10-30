@@ -7,7 +7,7 @@ import { enqueue, flushQueue, loadQueue } from './queue';
 import './kiosk.css';
 
 interface Info { tenantName: string; timezone: string; deviceName: string; driver: string }
-interface PunchResponse { duplicate?: boolean; type?: 'in' | 'out'; punchedAt?: string; employee: { id: string; name: string; employeeNo: string; position: string | null }; week: Week }
+interface PunchResponse { duplicate?: boolean; type?: 'in' | 'out'; punchedAt?: string; employee: { id: string; name: string; employeeNo: string; position: string | null; photoUrl?: string | null }; week: Week }
 type View =
   | { kind: 'idle' }
   | { kind: 'working'; text: string }
@@ -183,6 +183,7 @@ function Result({ data, mode }: { data: PunchResponse; mode: 'punch' | 'week' })
   return (
     <div className="k-result">
       <div className="row">
+        {data.employee.photoUrl && <img src={data.employee.photoUrl} alt="" style={{ width: 72, height: 72, borderRadius: 18, objectFit: 'cover' }} />}
         <div>
           <div className="who">{data.employee.name}</div>
           <div className="muted">{data.employee.position} · {data.employee.employeeNo}</div>

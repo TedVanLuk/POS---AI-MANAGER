@@ -5,35 +5,55 @@ import { useApi } from '../hooks';
 import { Avatar, Icon, type IconName } from '../components/Icon';
 import { useTheme } from '../theme';
 
-interface Emp { id: string; firstName: string; lastName: string; employeeNo: string; position: string | null; active: boolean }
+interface Emp { id: string; firstName: string; lastName: string; employeeNo: string; position: string | null; active: boolean; photoUrl?: string | null }
 
 export default function AdminLayout() {
   const { me, logout } = useAuth();
   const nav = useNavigate();
-  const links: [string, string, IconName, boolean][] = [
-    ['/admin', 'Dashboard', 'home', true],
-    ['/admin/attendance', 'Attendance', 'clock', true],
-    ['/admin/employees', 'Employees', 'users', true],
-    ['/admin/payroll', 'Payroll', 'wallet', true],
-    ['/admin/penalties', 'Penalties', 'scale', true],
-    ['/admin/efficiency', 'Server efficiency', 'receipt', true],
-    ['/admin/performance', 'Fighter cards', 'trophy', true],
-    ['/admin/ai', 'AI Manager', 'spark', isAdmin(me?.role)],
-    ['/admin/settings', 'Settings', 'settings', isAdmin(me?.role)],
+  const groups: { title: string; links: [string, string, IconName, boolean][] }[] = [
+    { title: 'Overview', links: [
+      ['/admin', 'Dashboard', 'home', true],
+      ['/admin/ai', 'AI Manager', 'spark', isAdmin(me?.role)],
+    ] },
+    { title: 'People', links: [
+      ['/admin/employees', 'Employees', 'users', true],
+      ['/admin/performance', 'Employee cards', 'trophy', true],
+      ['/admin/schedules', 'Schedules', 'calendar', true],
+      ['/admin/attendance', 'Attendance', 'clock', true],
+    ] },
+    { title: 'Pay', links: [
+      ['/admin/payroll', 'Payroll', 'wallet', true],
+      ['/admin/penalties', 'Penalties', 'scale', true],
+      ['/admin/efficiency', 'Server efficiency', 'receipt', true],
+    ] },
+    { title: 'System', links: [
+      ['/admin/settings', 'Settings', 'settings', isAdmin(me?.role)],
+    ] },
   ];
   return (
     <div className="app">
       <div className="frame">
-        <nav className="rail" aria-label="Main">
-          <div className="logo" title={me?.tenantName}><span>AIM</span></div>
-          {links.filter((l) => l[3]).map(([to, label, icon]) => (
-            <NavLink key={to} to={to} end={to === '/admin'} className={({ isActive }) => `rail-btn ${isActive ? 'active' : ''}`} aria-label={label}>
-              <Icon name={icon} /><span className="tip">{label}</span>
-            </NavLink>
-          ))}
-          <button className="rail-btn bottom" aria-label="Sign out" onClick={() => { logout(); nav('/login'); }}>
-            <Icon name="logout" /><span className="tip">Sign out</span>
-          </button>
+        <nav className="rail" aria-label="Main menu">
+          <div className="brand"><div className="logo" aria-hidden><span>AIM</span></div><div><b>AI Manager HR</b><span>{me?.tenantName}</span></div></div>
+          {groups.map((g) => {
+            const visible = g.links.filter((l) => l[3]);
+            if (!visible.length) return null;
+            return (
+              <div key={g.title} style={{ display: 'contents' }}>
+                <div className="group">{g.title}</div>
+                {visible.map(([to, label, icon]) => (
+                  <NavLink key={to} to={to} end={to === '/admin'} className={({ isActive }) => `rail-item ${isActive ? 'active' : ''}`}>
+                    <span className="ico"><Icon name={icon} /></span><span>{label}</span>
+                  </NavLink>
+                ))}
+              </div>
+            );
+          })}
+          <div className="bottom">
+            <button className="rail-item" onClick={() => { logout(); nav('/login'); }}>
+              <span className="ico"><Icon name="logout" /></span><span>Sign out</span>
+            </button>
+          </div>
         </nav>
         <main className="main">
           <TopBar />
@@ -99,7 +119,7 @@ function TopBar() {
             {results.length === 0 && <div className="muted small" style={{ padding: '.5rem .6rem' }}>No employee matches “{q}”.</div>}
             {results.map((e, i) => (
               <button key={e.id} className={i === sel ? 'on' : ''} onMouseDown={(ev) => { ev.preventDefault(); open(e.id); }}>
-                <Avatar name={`${e.firstName} ${e.lastName}`} />
+                <Avatar name={`${e.firstName} ${e.lastName}`} photo={e.photoUrl} />
                 <span><b>{e.firstName} {e.lastName}</b><br /><span className="muted small">{e.employeeNo} · {e.position}</span></span>
               </button>
             ))}

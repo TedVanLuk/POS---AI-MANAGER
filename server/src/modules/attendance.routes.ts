@@ -30,7 +30,7 @@ export default async function attendanceRoutes(app: FastifyInstance) {
       const r = records.get(e.id)![0];
       const last = lastPunches.find((x) => x.employeeId === e.id);
       const status = last?.type === 'in' ? 'in' : last?.type === 'out' ? 'out' : r.dayType === 'rest' ? 'rest_day' : r.holiday ? 'holiday' : 'not_in';
-      return { employeeId: e.id, name: `${e.firstName} ${e.lastName}`, employeeNo: e.employeeNo, position: e.position, status, lastPunchAt: last?.punchedAt ?? null, record: r };
+      return { employeeId: e.id, name: `${e.firstName} ${e.lastName}`, employeeNo: e.employeeNo, position: e.position, photoUrl: e.photoUrl, status, lastPunchAt: last?.punchedAt ?? null, record: r };
     });
     return {
       date,

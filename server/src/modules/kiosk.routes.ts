@@ -94,7 +94,7 @@ export default async function kioskRoutes(app: FastifyInstance) {
       duplicate: r.duplicate,
       type: r.punch.type,
       punchedAt: r.punch.punchedAt,
-      employee: { id: r.emp.id, name: `${r.emp.firstName} ${r.emp.lastName}`, employeeNo: r.emp.employeeNo, position: r.emp.position },
+      employee: { id: r.emp.id, name: `${r.emp.firstName} ${r.emp.lastName}`, employeeNo: r.emp.employeeNo, position: r.emp.position, photoUrl: r.emp.photoUrl },
       week: await weekSummary(dev.tenantId, r.emp.id),
     };
   });
@@ -111,7 +111,7 @@ export default async function kioskRoutes(app: FastifyInstance) {
       duplicate: r.duplicate,
       type: r.punch.type,
       punchedAt: r.punch.punchedAt,
-      employee: { id: emp.id, name: `${emp.firstName} ${emp.lastName}`, employeeNo: emp.employeeNo, position: emp.position },
+      employee: { id: emp.id, name: `${emp.firstName} ${emp.lastName}`, employeeNo: emp.employeeNo, position: emp.position, photoUrl: emp.photoUrl },
       week: await weekSummary(dev.tenantId, emp.id),
     };
   });
@@ -122,6 +122,6 @@ export default async function kioskRoutes(app: FastifyInstance) {
     const { employeeId } = parse(z.object({ employeeId: uuid }), req.body);
     const [emp] = await db.select().from(schema.employees).where(and(eq(schema.employees.id, employeeId), eq(schema.employees.tenantId, dev.tenantId)));
     if (!emp) throw notFound('Employee');
-    return { employee: { id: emp.id, name: `${emp.firstName} ${emp.lastName}`, employeeNo: emp.employeeNo, position: emp.position }, week: await weekSummary(dev.tenantId, emp.id) };
+    return { employee: { id: emp.id, name: `${emp.firstName} ${emp.lastName}`, employeeNo: emp.employeeNo, position: emp.position, photoUrl: emp.photoUrl }, week: await weekSummary(dev.tenantId, emp.id) };
   });
 }

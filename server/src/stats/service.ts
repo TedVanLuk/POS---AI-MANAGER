@@ -123,6 +123,8 @@ export async function fighterCards(tenantId: string, days = 30, employeeId?: str
         name: `${e.firstName} ${e.lastName}`,
         employeeNo: e.employeeNo,
         position: e.position,
+        department: e.department,
+        photoUrl: e.photoUrl,
         ...card,
         period: { from, to, days },
         raw: { ...t, efficiency: ef, approvedPenalties: penalties.find((x) => x.employeeId === e.id)?.n ?? 0, noteRating: n?.rating ?? 0, warnings: n?.warnings ?? 0 },

@@ -5,7 +5,7 @@ import { isAdmin, useAuth } from '../auth';
 import { useApi } from '../hooks';
 import { Avatar, Icon } from '../components/Icon';
 import { Burst, HoursBars, LatesLine, Ring, type DayPoint } from '../components/DashCharts';
-import type { CardData } from '../components/FighterCard';
+import type { CardData } from '../components/EmployeeCard';
 
 interface Dash {
   activeEmployees: number; attendanceRate: number | null; pendingPenalties: number;
@@ -19,7 +19,7 @@ interface Dash {
 interface Today {
   date: string; counts: { total: number; clockedIn: number; late: number; notIn: number };
   feed: { id: string; employeeId: string; type: 'in' | 'out'; punchedAt: string; method: string; name?: string }[];
-  rows: { employeeId: string; name: string; position: string | null; status: string; record: { lateMinutes: number; firstIn: string | null } }[];
+  rows: { employeeId: string; name: string; position: string | null; photoUrl?: string | null; status: string; record: { lateMinutes: number; firstIn: string | null } }[];
 }
 
 const short = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
@@ -71,7 +71,7 @@ export default function Dashboard() {
         <div className="avatar-strip" aria-label="Team">
           <button className="round-nav" disabled={page === 0} onClick={() => setPage((p) => p - 1)} aria-label="Previous team members"><Icon name="left" /></button>
           {team.slice(page * PER, page * PER + PER).map((r) => (
-            <Avatar key={r.employeeId} name={r.name} online={r.status === 'in'} title={`${r.name} · ${r.status === 'in' ? 'on shift' : r.status.replace('_', ' ')}`} onClick={() => nav(`/admin/employees/${r.employeeId}`)} />
+            <Avatar key={r.employeeId} name={r.name} photo={r.photoUrl} online={r.status === 'in'} title={`${r.name} · ${r.status === 'in' ? 'on shift' : r.status.replace('_', ' ')}`} onClick={() => nav(`/admin/employees/${r.employeeId}`)} />
           ))}
           <button className="round-nav" disabled={page >= pages - 1} onClick={() => setPage((p) => p + 1)} aria-label="Next team members"><Icon name="right" /></button>
         </div>
@@ -87,7 +87,9 @@ export default function Dashboard() {
           <div className="hero-photo">
             <span className="chip l"><i style={{ background: topRow?.status === 'in' ? 'var(--accent)' : 'var(--text-3)' }} />{topRow?.status === 'in' ? 'ON SHIFT' : 'OFF SHIFT'}</span>
             <span className="chip r">Top performer · 30 days</span>
-            <span className="mono" aria-hidden>{top ? top.name.split(' ').map((p) => p[0]).slice(0, 2).join('') : ''}</span>
+            {top?.photoUrl
+              ? <img className="hero-img" src={top.photoUrl} alt={`Photo of ${top.name}`} />
+              : <span className="mono" aria-hidden>{top ? top.name.split(' ').map((p) => p[0]).slice(0, 2).join('') : ''}</span>}
           </div>
           <div className="hero-body">
             <div className="nm">{top?.name ?? '—'}{top && <Link to={`/admin/employees/${top.employeeId}`} aria-label="Open profile"><Icon name="arrowUpRight" /></Link>}</div>
