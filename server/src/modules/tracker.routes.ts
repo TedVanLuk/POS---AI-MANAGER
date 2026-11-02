@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { and, eq, gte, inArray, lte, or } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lte, or } from 'drizzle-orm';
 import { DateTime } from 'luxon';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
@@ -36,8 +36,9 @@ export default async function trackerRoutes(app: FastifyInstance) {
       .sort((a, b) => (a.department === b.department ? 0 : a.department === 'Servers' ? -1 : 1))
       .map((e) => ({ employeeId: e.id, name: `${e.firstName} ${e.lastName}`.trim(), position: e.position }));
     const rows = stats.map((s) => ({ employeeId: s.employeeId, date: s.date, orders: s.orders, salesComms: s.salesComms, lds: s.lds, po: s.po }));
+    const [latest] = await db.select({ date: schema.serverStats.date }).from(schema.serverStats).where(eq(schema.serverStats.tenantId, p.tenantId)).orderBy(desc(schema.serverStats.date)).limit(1);
     return {
-      month, people: roster, stats: rows,
+      month, latestMonth: latest ? latest.date.slice(0, 7) : null, people: roster, stats: rows,
       weeks: weeks.map((w) => {
         const daysWorked = new Map(ids.map((id) => [id, summarize((records.get(id) ?? []).filter((d: { date: string }) => d.date >= w.start && d.date <= w.end)).daysPresent]));
         const penalties = new Map(ids.map((id) => [id, pens.filter((x) => x.employeeId === id && x.date >= w.start && x.date <= w.end).reduce((a, x) => a + x.amount, 0)]));

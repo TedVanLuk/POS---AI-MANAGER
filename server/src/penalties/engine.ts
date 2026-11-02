@@ -1,5 +1,6 @@
 import type { DayRecord } from '../attendance/engine.js';
 import type { PenaltyRuleConfig } from '../db/schema.js';
+import { round2 } from '../lib/money.js';
 
 /**
  * Pure penalty engine: evaluates management-defined rules against attendance records
@@ -22,7 +23,7 @@ export interface PenaltyCandidate {
   sourceKey: string;
 }
 
-export function evaluatePenalties(rules: RuleInput[], days: DayRecord[], windowKey: string): PenaltyCandidate[] {
+export function evaluatePenalties(rules: RuleInput[], days: DayRecord[], windowKey: string, opts: { hourlyRate?: number } = {}): PenaltyCandidate[] {
   const out: PenaltyCandidate[] = [];
   for (const rule of rules) {
     const cfg = rule.config;
@@ -31,8 +32,11 @@ export function evaluatePenalties(rules: RuleInput[], days: DayRecord[], windowK
         for (const d of days) {
           if (d.lateMinutes <= 0) continue;
           const tier = cfg.tiers.find((t) => d.lateMinutes >= t.minMinutes && (t.maxMinutes === null || d.lateMinutes <= t.maxMinutes));
-          if (!tier || tier.amount <= 0) continue;
-          out.push({ ruleId: rule.id, date: d.date, kind: 'late', minutes: d.lateMinutes, amount: tier.amount, reason: `${rule.name}: late ${d.lateMinutes} min`, sourceKey: `late:${d.date}` });
+          if (!tier) continue;
+          const amount = tier.payHours ? round2(tier.payHours * (opts.hourlyRate ?? 0)) : tier.amount;
+          if (amount <= 0) continue;
+          const what = tier.payHours ? ` = ${tier.payHours === 4 ? 'half-day' : `${tier.payHours} h`} of pay` : '';
+          out.push({ ruleId: rule.id, date: d.date, kind: 'late', minutes: d.lateMinutes, amount, reason: `${rule.name}: late ${d.lateMinutes} min${what}`, sourceKey: `late:${d.date}` });
         }
         break;
       case 'late_frequency': {

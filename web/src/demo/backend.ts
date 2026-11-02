@@ -11,6 +11,8 @@ import { evaluateTeam, type PersonInput } from '../../../server/src/stats/perfor
 import { codeOn, isOnDuty, restDaysFromPattern, rosterWeek, type RosterEntry } from '../../../server/src/stats/roster';
 import { monthWeeks, rankMetric, trackerTotals, TRACKER_METRICS, type StatRow } from '../../../server/src/stats/tracker';
 import { MDC_DEPARTMENTS, MDC_PAYROLL_OCT_5_11, MDC_STAFF, MDC_TRACKER } from '../../../server/src/db/mdc-data';
+import { COMMISSIONS, HANDBOOK_RULES, MDC_HANDBOOK, TABLES } from '../../../server/src/policy/handbook';
+import { composeJob, createsCycle, resolveRoles, type RoleOverride } from '../../../server/src/policy/jobs';
 import { applyRowChanges, buildSheetRows, computeSheet, EDITABLE_FIELDS, nameLinker, periodLabel, rowsFromPaper, type SheetRow, type SheetSource } from '../../../server/src/payroll/sheet';
 import { deriveRates } from '../../../server/src/payroll/engine';
 import { currentCutoff, dailyTrend, overtimeLeaders } from '../../../server/src/stats/dashboard';
@@ -58,12 +60,12 @@ interface Store {
   schedules: Schedule[]; employees: Employee[]; users: User[]; devices: Device[]; templates: Template[];
   punches: Punch[]; holidays: Holiday[]; runs: Run[]; payslips: Payslip[]; lines: Line[]; rules: Rule[];
   penalties: Penalty[]; slips: Slip[]; notes: Note[]; audit: Audit[];
-  roster: RosterEntry[]; stats: StatRow[]; reviews: Review[]; paySheets: PaySheet[];
+  roster: RosterEntry[]; stats: StatRow[]; reviews: Review[]; paySheets: PaySheet[]; policy: Record<string, RoleOverride>;
 }
 interface PaySheet { id: string; periodStart: string; periodEnd: string; status: 'draft' | 'final'; cashReceived: number; rows: SheetRow[]; notes: string | null; createdBy: string; finalizedBy: string | null; finalizedAt: string | null; createdAt: string; updatedAt: string }
 
 const STORE_KEY = 'aim.demo.store.v1';
-const STORE_VERSION = 5;
+const STORE_VERSION = 6;
 export const DEMO_DEVICE_TOKEN = 'demo-kiosk-token-change-me-0000000001';
 const TZ = 'Asia/Manila';
 
@@ -163,7 +165,9 @@ function generatePenalties(from: string, to: string, employeeIds?: string[]) {
   if (!rules.length) return { created: 0 };
   let created = 0;
   for (const [employeeId, days] of dayRecords(from, to, employeeIds).records) {
-    for (const c of evaluatePenalties(rules.map((r) => ({ id: r.id, name: r.name, config: r.config })), days, from)) {
+    const emp = s.employees.find((e) => e.id === employeeId);
+    const hourlyRate = emp ? deriveRates(emp, settings().payroll).daily / settings().payroll.hoursPerDay : 0;
+    for (const c of evaluatePenalties(rules.map((r) => ({ id: r.id, name: r.name, config: r.config })), days, from, { hourlyRate })) {
       if (s.penalties.some((p) => p.employeeId === employeeId && p.ruleId === c.ruleId && p.sourceKey === c.sourceKey)) continue;
       const rule = rules.find((r) => r.id === c.ruleId)!;
       s.penalties.push({ id: uid(), employeeId, ruleId: c.ruleId, date: c.date, kind: c.kind, minutes: c.minutes, amount: c.amount, reason: c.reason, status: rule.autoApprove ? 'approved' : 'pending', sourceKey: c.sourceKey, issuedBy: null, decidedBy: null, decidedAt: rule.autoApprove ? nowIso() : null, decisionReason: rule.autoApprove ? 'Auto-approved by rule' : null, payrollRunId: null, createdAt: nowIso() });
@@ -496,7 +500,9 @@ on('GET', '/api/tracker', (c, _p, q) => {
   const rows = s.stats.filter((x) => ids.includes(x.employeeId) && x.date >= from && x.date <= to);
   const { records } = dayRecords(from, to, ids);
   const pens = s.penalties.filter((x) => x.status === 'approved' && ids.includes(x.employeeId) && x.date >= from && x.date <= to);
+  const latest = s.stats.reduce((m, x) => (x.date > m ? x.date : m), '');
   return {
+    latestMonth: latest ? latest.slice(0, 7) : null,
     month, people, stats: rows,
     weeks: weeks.map((w) => {
       const daysWorked = new Map(ids.map((id) => [id, summarize((records.get(id) ?? []).filter((d) => d.date >= w.start && d.date <= w.end)).daysPresent]));
@@ -658,6 +664,62 @@ on('DELETE', '/api/pay-sheets/:id', (c, p) => {
   if (x.status === 'final') fail(400, 'Reopen a final payroll before deleting it');
   store().paySheets = store().paySheets.filter((y) => y !== x);
   audit(c, { entity: 'pay_sheet', entityId: x.id, action: 'delete', before: { period: [x.periodStart, x.periodEnd], rows: x.rows.length } });
+  return { ok: true };
+});
+
+// company policy: handbook, hierarchy, job descriptions
+function policyContext() {
+  const s = store();
+  const headcount: Record<string, number> = {};
+  for (const e of s.employees) if (e.active && e.department) headcount[e.department] = (headcount[e.department] ?? 0) + 1;
+  return { company: s.tenant.name, departments: settings().departments ?? [], roles: resolveRoles(s.policy), headcount };
+}
+const ROLE_FIELDS = ['title', 'holder', 'department', 'level', 'reportsTo', 'summary', 'duties', 'kpis', 'skills', 'focusRules'] as const;
+function roleInput(b: Record<string, unknown>) {
+  const out: RoleOverride = {};
+  for (const f of ROLE_FIELDS) if (f in b) (out as Record<string, unknown>)[f] = b[f];
+  if (out.title !== undefined && !String(out.title).trim()) fail(400, 'Give the role a title');
+  for (const f of ['duties', 'kpis', 'skills'] as const) if (out[f] !== undefined && (!Array.isArray(out[f]) || out[f]!.length > 30)) fail(400, 'Too many lines');
+  return out;
+}
+on('GET', '/api/policy/handbook', (c) => { requireUser(c, ['owner', 'admin', 'manager', 'employee']); return { company: store().tenant.name, handbook: MDC_HANDBOOK, rules: HANDBOOK_RULES, commissions: COMMISSIONS, tables: TABLES }; });
+on('GET', '/api/policy/roles', (c) => { requireUser(c, STAFF); const x = policyContext(); return { company: x.company, roles: x.roles, headcount: x.headcount, departments: x.departments.map((d) => d.name) }; });
+on('GET', '/api/policy/jobs/:key', (c, p) => {
+  requireUser(c, STAFF);
+  const x = policyContext();
+  const role = x.roles.find((r) => r.key === p.key) ?? notFound('Job description');
+  return { role, doc: composeJob(role, x) };
+});
+on('PUT', '/api/policy/roles/:key', (c, p, _q, b) => {
+  requireUser(c, ADMIN);
+  const x = policyContext();
+  if (!x.roles.some((r) => r.key === p.key)) notFound('Role');
+  const o = roleInput(b);
+  if (o.reportsTo !== undefined && createsCycle(x.roles, p.key, o.reportsTo ?? null)) fail(400, 'That reporting line would make a loop');
+  if (o.reportsTo && !x.roles.some((r) => r.key === o.reportsTo)) fail(400, 'Unknown manager role');
+  const before = store().policy[p.key] ?? null;
+  store().policy[p.key] = { ...(before ?? {}), ...o };
+  audit(c, { entity: 'policy_role', action: 'update', before, after: { key: p.key, ...o }, reason: (b.reason as string) || null });
+  return { ok: true };
+});
+on('POST', '/api/policy/roles', (c, _p, _q, b) => {
+  requireUser(c, ADMIN);
+  const x = policyContext();
+  const o = roleInput(b);
+  if (!o.title) fail(400, 'Give the role a title');
+  if (!o.reportsTo || !x.roles.some((r) => r.key === o.reportsTo)) fail(400, 'Choose who this role reports to');
+  const key = `custom:${uid()}`;
+  store().policy[key] = { ...o, custom: true };
+  audit(c, { entity: 'policy_role', action: 'create', after: { key, ...o } });
+  return { key };
+});
+on('DELETE', '/api/policy/roles/:key', (c, p) => {
+  requireUser(c, ADMIN);
+  const x = policyContext();
+  if (p.key.startsWith('custom:') && x.roles.some((r) => r.reportsTo === p.key)) fail(400, 'Move the roles that report to this one first');
+  const before = store().policy[p.key] ?? null;
+  delete store().policy[p.key];
+  audit(c, { entity: 'policy_role', action: p.key.startsWith('custom:') ? 'delete' : 'reset', before });
   return { ok: true };
 });
 
@@ -980,7 +1042,7 @@ function seed(): Store {
     tenant: { id: uid(), name: 'Mega Dance Center', timezone: TZ, currency: 'PHP', settings: { ...structuredClone(DEFAULT_SETTINGS), departments: structuredClone(MDC_DEPARTMENTS), paySheets: [...MDC_PAYROLL_OCT_5_11.sheets] } },
     branches: [{ id: uid(), name: 'MDC Main', address: 'Mega Dance Center' }],
     schedules: [], employees: [], users: [], devices: [], templates: [], punches: [], holidays: [], runs: [], payslips: [], lines: [], rules: [], penalties: [], slips: [], notes: [], audit: [],
-    roster: [], stats: [], reviews: [], paySheets: [],
+    roster: [], stats: [], reviews: [], paySheets: [], policy: {},
   };
   db = s;
   const branchId = s.branches[0].id;
@@ -1012,9 +1074,8 @@ function seed(): Store {
   ];
   for (const [date, n, type] of hol) s.holidays.push({ id: uid(), date, name: n, type });
   s.rules.push(
-    { id: uid(), name: 'Late policy', config: { kind: 'late_tiered', tiers: [{ minMinutes: 6, maxMinutes: 15, amount: 25 }, { minMinutes: 16, maxMinutes: 30, amount: 50 }, { minMinutes: 31, maxMinutes: null, amount: 100 }] }, active: true, autoApprove: false, createdAt: created },
-    { id: uid(), name: 'Habitual tardiness (5+ per cutoff)', config: { kind: 'late_frequency', threshold: 5, amount: 200 }, active: true, autoApprove: false, createdAt: created },
-    { id: uid(), name: 'No time-out', config: { kind: 'missing_timeout', amount: 20 }, active: true, autoApprove: false, createdAt: created },
+    { id: uid(), name: 'Late deduction (handbook)', config: { kind: 'late_tiered', tiers: [{ minMinutes: 11, maxMinutes: 59, amount: 0, payHours: 1 }, { minMinutes: 60, maxMinutes: null, amount: 0, payHours: 4 }] }, active: true, autoApprove: false, createdAt: created },
+    { id: uid(), name: 'A.W.O.L. — absence without notice (handbook)', config: { kind: 'absence', amount: 500 }, active: true, autoApprove: false, createdAt: created },
   );
 
   // Five weeks of punches following each person's usual week and their department's hours (plus today so far).

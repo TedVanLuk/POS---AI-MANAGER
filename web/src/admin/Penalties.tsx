@@ -6,7 +6,7 @@ import { Modal, ReasonDialog } from '../components/Modal';
 
 interface Penalty { id: string; employeeId: string; employeeName: string; employeeNo: string; date: string; kind: string; minutes: number | null; amount: number; reason: string; status: 'pending' | 'approved' | 'waived'; decidedByName: string | null; decisionReason: string | null; payrollRunId: string | null }
 type RuleConfig =
-  | { kind: 'late_tiered'; tiers: { minMinutes: number; maxMinutes: number | null; amount: number }[] }
+  | { kind: 'late_tiered'; tiers: { minMinutes: number; maxMinutes: number | null; amount: number; payHours?: number }[] }
   | { kind: 'late_frequency'; threshold: number; amount: number }
   | { kind: 'absence'; amount: number }
   | { kind: 'missing_timeout'; amount: number };
@@ -14,7 +14,7 @@ interface Rule { id: string; name: string; config: RuleConfig; active: boolean; 
 
 function describeRule(c: RuleConfig) {
   switch (c.kind) {
-    case 'late_tiered': return c.tiers.map((t) => `${t.minMinutes}–${t.maxMinutes ?? '∞'} min late: ${peso(t.amount)}`).join(' · ');
+    case 'late_tiered': return c.tiers.map((t) => `${t.minMinutes}–${t.maxMinutes ?? '∞'} min late: ${t.payHours ? (t.payHours === 4 ? 'half-day of pay' : `${t.payHours} h of pay`) : peso(t.amount)}`).join(' · ');
     case 'late_frequency': return `${c.threshold}+ lates in a cutoff: ${peso(c.amount)}`;
     case 'absence': return `Each unexcused absence: ${peso(c.amount)}`;
     case 'missing_timeout': return `Each missing time-out: ${peso(c.amount)}`;

@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { getDayRecords } from '../attendance/service.js';
+import { deriveRates } from '../payroll/engine.js';
 import { evaluatePenalties } from './engine.js';
 
 /**
@@ -11,10 +12,12 @@ export async function generatePenalties(tenantId: string, from: string, to: stri
   const rules = await db.select().from(schema.penaltyRules)
     .where(and(eq(schema.penaltyRules.tenantId, tenantId), eq(schema.penaltyRules.active, true)));
   if (!rules.length) return { created: 0 };
-  const { records } = await getDayRecords(tenantId, from, to, employeeIds);
+  const { tenant, employees, records } = await getDayRecords(tenantId, from, to, employeeIds);
   let created = 0;
   for (const [employeeId, days] of records) {
-    const candidates = evaluatePenalties(rules.map((r) => ({ id: r.id, name: r.name, config: r.config })), days, from);
+    const emp = employees.find((e) => e.id === employeeId);
+    const hourlyRate = emp ? deriveRates(emp, tenant.settings.payroll).daily / tenant.settings.payroll.hoursPerDay : 0;
+    const candidates = evaluatePenalties(rules.map((r) => ({ id: r.id, name: r.name, config: r.config })), days, from, { hourlyRate });
     for (const c of candidates) {
       const rule = rules.find((r) => r.id === c.ruleId)!;
       const inserted = await db.insert(schema.penalties).values({

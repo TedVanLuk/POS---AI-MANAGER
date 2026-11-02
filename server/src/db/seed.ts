@@ -76,9 +76,8 @@ async function main() {
   const [device] = await db.insert(schema.devices).values({ tenantId, branchId: branch.id, name: 'Entrance Time Clock', tokenHash: sha256(DEMO_DEVICE_TOKEN), driver: 'simulator' }).returning();
   await db.insert(schema.holidays).values(PH_HOLIDAYS_2026.map((h) => ({ ...h, tenantId })));
   await db.insert(schema.penaltyRules).values([
-    { tenantId, name: 'Late policy', config: { kind: 'late_tiered', tiers: [{ minMinutes: 6, maxMinutes: 15, amount: 25 }, { minMinutes: 16, maxMinutes: 30, amount: 50 }, { minMinutes: 31, maxMinutes: null, amount: 100 }] } },
-    { tenantId, name: 'Habitual tardiness (5+ per cutoff)', config: { kind: 'late_frequency', threshold: 5, amount: 200 } },
-    { tenantId, name: 'No time-out', config: { kind: 'missing_timeout', amount: 20 } },
+    { tenantId, name: 'Late deduction (handbook)', config: { kind: 'late_tiered', tiers: [{ minMinutes: 11, maxMinutes: 59, amount: 0, payHours: 1 }, { minMinutes: 60, maxMinutes: null, amount: 0, payHours: 4 }] } },
+    { tenantId, name: 'A.W.O.L. — absence without notice (handbook)', config: { kind: 'absence', amount: 500 } },
   ]);
 
   // Five weeks of punches following each person's usual week and department hours.

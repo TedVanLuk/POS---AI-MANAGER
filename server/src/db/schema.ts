@@ -249,7 +249,8 @@ export const payslipLines = pgTable('payslip_lines', {
 });
 
 export type PenaltyRuleConfig =
-  | { kind: 'late_tiered'; tiers: { minMinutes: number; maxMinutes: number | null; amount: number }[] }
+  /** Each tier deducts a fixed `amount`, or `payHours` hours of the employee's pay (handbook scheme). */
+  | { kind: 'late_tiered'; tiers: { minMinutes: number; maxMinutes: number | null; amount: number; payHours?: number }[] }
   | { kind: 'late_frequency'; threshold: number; amount: number }
   | { kind: 'absence'; amount: number }
   | { kind: 'missing_timeout'; amount: number };
@@ -401,3 +402,13 @@ export const paySheets = pgTable('pay_sheets', {
   createdAt: createdAt(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('pay_sheets_tenant_period').on(t.tenantId, t.periodStart)]);
+
+/** Company policy edits: job description / org chart overrides, keyed by role (e.g. "head:Bartenders"). */
+export const policyDocs = pgTable('policy_docs', {
+  id: id(),
+  tenantId: tenantId(),
+  key: text('key').notNull(),
+  content: jsonb('content').$type<Record<string, unknown>>().notNull().default({}),
+  updatedBy: uuid('updated_by').references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex('policy_docs_tenant_key').on(t.tenantId, t.key)]);

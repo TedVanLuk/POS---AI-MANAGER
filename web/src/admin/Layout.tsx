@@ -25,6 +25,9 @@ export default function AdminLayout() {
       ['/admin/payroll', 'Payroll', 'wallet', true],
       ['/admin/efficiency', 'Server efficiency', 'receipt', true],
     ] },
+    { title: 'Company', links: [
+      ['/admin/policy', 'Company Policy', 'book', true],
+    ] },
     { title: 'System', links: [
       ['/admin/settings', 'Settings', 'settings', isAdmin(me?.role)],
     ] },

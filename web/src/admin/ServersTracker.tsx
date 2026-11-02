@@ -7,7 +7,7 @@ import { METRIC_LABELS, rankMetric, TRACKER_METRICS, type StatRow, type TrackerM
 import Efficiency from './Efficiency';
 
 interface Week { start: string; end: string; days: string[]; label: string; totals: TrackerTotal[]; ranks: Record<TrackerMetric, ReturnType<typeof rankMetric>> }
-interface Tracker { month: string; people: { employeeId: string; name: string; position: string | null }[]; stats: StatRow[]; weeks: Week[] }
+interface Tracker { month: string; latestMonth: string | null; people: { employeeId: string; name: string; position: string | null }[]; stats: StatRow[]; weeks: Week[] }
 type SortKey = 'no' | 'name' | 'days' | 'penalties' | TrackerMetric;
 
 /** Server efficiency: the monthly servers tracker (Orders, Sales Comms. = packages, LD's, PO) and the order-slip (OS) check. */
@@ -67,6 +67,12 @@ function ServersTracker() {
         <label className="field" style={{ gridAutoFlow: 'column', alignItems: 'center' }}>Month<input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} /></label>
       </div>
       {data.error && <div className="error">{data.error}</div>}
+      {t && t.stats.length === 0 && t.latestMonth && t.latestMonth !== month && (
+        <div className="notice row" style={{ marginBottom: 14 }}>
+          No numbers entered for {DateTime.fromISO(`${month}-01`).toFormat('LLLL yyyy')} yet.
+          <button className="btn sm" onClick={() => setMonth(t.latestMonth!)}>Show {DateTime.fromISO(`${t.latestMonth}-01`).toFormat('LLLL yyyy')}</button>
+        </div>
+      )}
       {t && (
         <>
           <div className="seg" role="group" aria-label="Week" style={{ marginBottom: 14, flexWrap: 'wrap' }}>

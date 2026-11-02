@@ -15,6 +15,7 @@ const PATHS: Record<string, string> = {
   bell: 'M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0',
   search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4',
   plus: 'M12 5v14M5 12h14',
+  book: 'M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5M9 7h7M9 11h5',
   left: 'M15 18l-6-6 6-6',
   right: 'M9 18l6-6-6-6',
   arrowUpRight: 'M7 17 17 7M8 7h9v9',

@@ -17,6 +17,8 @@ import EmployeePerformance from './admin/EmployeePerformance';
 import Schedules from './admin/Schedules';
 import AIChat from './admin/AIChat';
 import Settings from './admin/Settings';
+import CompanyPolicy from './admin/CompanyPolicy';
+import JobDescription from './admin/JobDescription';
 import Kiosk from './kiosk/Kiosk';
 import MePage from './me/MePage';
 
@@ -58,6 +60,8 @@ export default function App() {
         <Route path="performance/:id" element={<EmployeePerformance />} />
         <Route path="schedules" element={<Schedules />} />
         <Route path="ai" element={<AIChat />} />
+        <Route path="policy" element={<CompanyPolicy />} />
+        <Route path="policy/jobs/:key" element={<JobDescription />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
