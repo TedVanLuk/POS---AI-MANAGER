@@ -14,6 +14,9 @@ import { nameLinker, rowsFromPaper } from '../payroll/sheet.js';
 import { sampleReviews } from '../mgmt/sample.js';
 import { MDC_DEPARTMENTS, MDC_PAYROLL_OCT_5_11, MDC_STAFF, MDC_TRACKER } from './mdc-data.js';
 import { isOnDuty } from '../stats/roster.js';
+import { applyPlaybook, DEFAULT_CRM } from '../crm/playbooks.js';
+import { sampleCrm } from '../crm/sample.js';
+import { todayFor } from '../crm/core.js';
 
 const TZ = 'Asia/Manila';
 export const DEMO_DEVICE_TOKEN = 'demo-kiosk-token-change-me-0000000001';
@@ -54,7 +57,8 @@ async function main() {
     await db.delete(schema.tenants).where(eq(schema.tenants.id, t.id));
   }
 
-  const settings = { ...DEFAULT_SETTINGS, departments: MDC_DEPARTMENTS, paySheets: MDC_PAYROLL_OCT_5_11.sheets };
+  const crmPlaybook = applyPlaybook({ ...DEFAULT_CRM, senderName: 'MDC' }, 'nightclub_vip');
+  const settings = { ...DEFAULT_SETTINGS, departments: MDC_DEPARTMENTS, paySheets: MDC_PAYROLL_OCT_5_11.sheets, crm: crmPlaybook.settings };
   const [tenant] = await db.insert(schema.tenants).values({ name: DEMO_TENANT, timezone: TZ, settings }).returning();
   const tenantId = tenant.id;
   const [branch] = await db.insert(schema.branches).values({ tenantId, name: 'MDC Main', address: 'Mega Dance Center' }).returning();
@@ -149,7 +153,22 @@ async function main() {
   const samples = sampleReviews(reviewPeople, [3, 2, 1].map((n) => reviewDay.minus({ days: n }).toISODate()!));
   await db.insert(schema.mgmtReviews).values(samples.map((r) => ({ ...r, tenantId, createdBy: admin.id })));
 
-  console.log(`\nSeeded "${DEMO_TENANT}": ${emps.length} staff, ${punches.length} punches, ${stats.length} tracker days, Oct. 5-11 payroll`);
+  // AI Marketing: nightclub VIP playbook + sample guests (VIP tables and shisha regulars).
+  const ids = (dep: string) => emps.filter((e) => e.department === dep).map((e) => e.id);
+  const crm = sampleCrm({ today: todayFor(TZ, crmPlaybook.settings.dayStartHour), tz: TZ, settings: crmPlaybook.settings, business: 'MDC', uid: randomUUID,
+    emp: { promoters: ids('Promoters'), hosts: ids('VIP Host'), servers: ids('Servers'), shisha: ids('Shisha') } });
+  const chunks = async <T>(rows: T[], fn: (xs: T[]) => Promise<unknown>) => { for (let i = 0; i < rows.length; i += 500) await fn(rows.slice(i, i + 500)); };
+  await chunks(crm.customers, (xs) => db.insert(schema.crmCustomers).values(xs.map((c) => ({ ...c, tenantId, createdAt: new Date(c.createdAt), erasedAt: null }))));
+  const consentEvents = crm.customers.filter((c) => c.consent.sms).map((c) => ({ tenantId, customerId: c.id, channel: 'sms', granted: true, source: c.consent.sms!.source, textVersion: c.consent.sms!.version ?? 'v1', text: crmPlaybook.settings.consentText.replaceAll('{{business}}', 'MDC'), createdAt: new Date(c.consent.sms!.at) }));
+  await chunks(consentEvents, (xs) => db.insert(schema.crmConsentEvents).values(xs));
+  await chunks(crm.reservations, (xs) => db.insert(schema.crmReservations).values(xs.map((r) => ({ ...r, tenantId, createdAt: new Date(r.createdAt) }))));
+  await chunks(crm.visits, (xs) => db.insert(schema.crmVisits).values(xs.map((v) => ({ ...v, tenantId, occurredAt: new Date(v.occurredAt) }))));
+  await chunks(crm.points, (xs) => db.insert(schema.crmPoints).values(xs.map((x) => ({ ...x, tenantId, createdAt: new Date(x.createdAt) }))));
+  await db.insert(schema.crmCampaigns).values(crm.campaigns.map((c) => ({ ...c, tenantId, sentAt: c.sentAt ? new Date(c.sentAt) : null, createdAt: new Date(c.createdAt), createdBy: admin.id })));
+  await chunks(crm.messages, (xs) => db.insert(schema.crmMessages).values(xs.map((m) => ({ ...m, tenantId, createdAt: new Date(m.createdAt) }))));
+  await db.insert(schema.crmAutomations).values(crmPlaybook.automations.map((a, i) => ({ tenantId, key: a.key, name: a.name, trigger: a.trigger, enabled: a.enabled, channel: a.channel, days: a.days, filter: a.filter, template: a.template, bonusPoints: a.bonusPoints ?? null, sortOrder: i })));
+
+  console.log(`\nSeeded "${DEMO_TENANT}": ${emps.length} staff, ${punches.length} punches, ${stats.length} tracker days, Oct. 5-11 payroll, ${crm.customers.length} CRM guests / ${crm.visits.length} visits`);
   console.log('  Owner:     admin@demo.ph / Admin123!');
   console.log('  Manager:   manager@demo.ph / Manager123!');
   console.log('  Employee:  jane@demo.ph / Employee123!   (kiosk PIN for all demo staff: 1234)');

@@ -1,6 +1,11 @@
-# AI Manager HR
+# AI Manager
 
-A multi-tenant HR platform for Philippine (and international) businesses. It covers:
+A multi-tenant management platform for Philippine (and international) hospitality businesses, with two main layers:
+
+- **AI Manager HR**: people, time, pay and performance
+- **AI Marketing**: a guest CRM with loyalty, VIP management, campaigns and automations, and measured retention
+
+The HR layer covers:
 
 - Fingerprint time-in/out on a tablet kiosk
 - Automated PH payroll with an audited review/edit workflow
@@ -15,6 +20,7 @@ A multi-tenant HR platform for Philippine (and international) businesses. It cov
 | **2. Automated payroll** | Payroll is computed from punches: OT, night diff, rest day and holiday premiums, late/undertime/absence, SSS/PhilHealth/Pag-IBIG, BIR withholding tax, 13th-month accrual. Each component can be switched off per tenant or per payslip line. Every manual edit records **who, when, old → new, and why**. The run follows draft → review → approved (locked) → paid. |
 | **3. Penalties** | Rules (late tiers, habitual tardiness, AWOL, missing time-out) and manual disciplinary deductions go through pending → approved / waived. Approved penalties are deducted automatically. |
 | **4. Efficiency, notes & stats** | Order slips (OS) per server: throughput, service time, voids, sales/hour, and **missing serial detection**. Management notes (commendation, coaching, warning, incident). **Fighter cards** (OVR + PUN/ATT/SPD/HUS/SAL/DIS/REP radar). |
+| **5. AI Marketing (CRM)** | Guest profiles with spend, visit rhythm, preferences, **auto-tags** and **tiers** (SevenRooms-style). **Counter check-in** by mobile number with points and rewards (Square-style). **Tonight & tables**: VIP reservations vs minimum consumable, arrival recognition, promoter/VIP-host attribution. **Campaigns** with a **holdout group** and proven lift / incremental ₱ / ROI. **Automations** and one-click **playbooks** (nightclub VIP, café loyalty, shisha lounge; GoHighLevel-style). Data Privacy Act tooling: recorded opt-in, STOP handling, export and erasure. See [docs/05](docs/05-ai-marketing-crm.md). |
 | **Access** | **Admin/owner/manager** web app with dashboard, statistics and AI chat. **Employee**: kiosk punch, plus `/me` with own week, lates, approved payslips and card. |
 
 Docs:
@@ -22,6 +28,7 @@ Docs:
 - [Architecture](docs/02-architecture.md)
 - [Fingerprint hardware](docs/03-hardware-fingerprint.md)
 - [Payroll rules](docs/04-payroll-rules-ph.md)
+- [AI Marketing / CRM: research, design and pilot plan](docs/05-ai-marketing-crm.md)
 
 ## Stack
 TypeScript end-to-end:
@@ -42,7 +49,7 @@ cp server/.env.example server/.env
 #   set JWT_SECRET and BIOMETRIC_KEY (openssl rand -base64 32); optionally ANTHROPIC_API_KEY for AI chat
 
 # 3. Migrate + demo data
-npm run db:seed              # runs migrations, then seeds "Mega Dance Center" (128 staff from the MDC schedule, October servers tracker)
+npm run db:seed              # runs migrations, then seeds "Mega Dance Center" (128 staff from the MDC schedule, October servers tracker, ~270 sample CRM guests)
 
 # 4. Develop
 npm run dev                  # API on :4000, web on :5173 (proxied)
@@ -59,7 +66,7 @@ Demo logins (from the seed):
 
 ## Tests
 ```bash
-npm test        # attendance, payroll (PH statutory + premiums + overrides) and penalty engines
+npm test        # attendance, payroll (PH statutory + premiums + overrides), penalty and CRM engines
 npm run typecheck
 ```
 
@@ -70,11 +77,13 @@ server/src/
   payroll/      engine.ts (PH payslip lines), statutory-ph.ts (tables), service.ts (runs, edits, audit)
   penalties/    engine.ts (rules), service.ts
   stats/        engine.ts (fighter card), service.ts (efficiency, serial gaps)
+  crm/          engine.ts (tags, tiers, RFM, loyalty, consent, lift), core.ts, playbooks.ts, service.ts, messaging.ts (Semaphore SMS)
   ai/           assistant.ts (Claude tool runner)
   modules/      HTTP routes per area
   db/           schema.ts, migrations (../drizzle), seed.ts
 web/src/
   kiosk/        Kiosk.tsx, drivers/ (secugen, android, simulator), queue.ts
   admin/        Dashboard, Attendance, Employees, Payroll, Penalties, Efficiency, Performance, AI, Settings
+  marketing/    AI Marketing: dashboard, guests, guest profile, counter, tonight & tables, campaigns, automations, settings
   me/           employee self-service
 ```

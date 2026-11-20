@@ -54,6 +54,8 @@ export type TenantSettings = {
   departments?: { name: string; group: string; dailyRate: number; shiftStart: string; shiftEnd: string; paySheet?: string | null; nightDiffHours?: number | null }[];
   /** Weekly payroll sheets in print order (e.g. "Admin, Cashiers, Bouncers", "Servers", …). */
   paySheets?: string[];
+  /** AI Marketing / CRM: loyalty program, tiers, auto-tag rules, messaging and privacy settings. */
+  crm?: Partial<import('../crm/engine.js').CrmSettings>;
 };
 
 export const tenants = pgTable('tenants', {
@@ -431,3 +433,164 @@ export const mgmtReviews = pgTable('mgmt_reviews', {
   createdBy: uuid('created_by').references(() => users.id),
   createdAt: createdAt(),
 }, (t) => [index('mgmt_reviews_tenant_date').on(t.tenantId, t.date), index('mgmt_reviews_employee').on(t.employeeId, t.date)]);
+
+// ================================================================ AI Marketing — CRM
+type ConsentState = import('../crm/engine.js').ConsentState;
+type AudienceFilter = import('../crm/engine.js').AudienceFilter;
+type Preferences = import('../crm/core.js').Preferences;
+
+/** A guest / customer. Phone is E.164 and unique per tenant — it is the loyalty ID (no app, no card). */
+export const crmCustomers = pgTable('crm_customers', {
+  id: id(),
+  tenantId: tenantId(),
+  firstName: text('first_name').notNull().default(''),
+  lastName: text('last_name').notNull().default(''),
+  phone: text('phone'),
+  email: text('email'),
+  /** "MM-DD" — the year is not needed for a birthday treat (data minimisation). */
+  birthday: text('birthday'),
+  /** counter | reservation | pos | import | manual | guestlist */
+  source: text('source').notNull().default('manual'),
+  /** Promoter / VIP host who brought the guest (links marketing to HR commissions). */
+  referredByEmployeeId: uuid('referred_by_employee_id').references(() => employees.id, { onDelete: 'set null' }),
+  tags: jsonb('tags').$type<string[]>().notNull().default([]),
+  preferences: jsonb('preferences').$type<Preferences>().notNull().default({}),
+  /** Current consent per channel; the full history is in crm_consent_events. */
+  consent: jsonb('consent').$type<ConsentState>().notNull().default({}),
+  erasedAt: timestamp('erased_at', { withTimezone: true }),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex('crm_customers_phone').on(t.tenantId, t.phone), index('crm_customers_tenant').on(t.tenantId)]);
+
+/** Append-only proof of consent (who, when, which wording, how) — NPC accountability. */
+export const crmConsentEvents = pgTable('crm_consent_events', {
+  id: id(),
+  tenantId: tenantId(),
+  customerId: uuid('customer_id').notNull().references(() => crmCustomers.id, { onDelete: 'cascade' }),
+  channel: text('channel').notNull(),
+  granted: boolean('granted').notNull(),
+  /** counter | web_form | reservation | import | admin | sms_stop */
+  source: text('source').notNull(),
+  textVersion: text('text_version'),
+  text: text('text'),
+  actorUserId: uuid('actor_user_id').references(() => users.id),
+  ip: text('ip'),
+  createdAt: createdAt(),
+}, (t) => [index('crm_consent_customer').on(t.customerId)]);
+
+/** One identified purchase / visit. External ref (POS receipt no.) makes POS pushes idempotent. */
+export const crmVisits = pgTable('crm_visits', {
+  id: id(),
+  tenantId: tenantId(),
+  customerId: uuid('customer_id').notNull().references(() => crmCustomers.id, { onDelete: 'cascade' }),
+  branchId: uuid('branch_id').references(() => branches.id, { onDelete: 'set null' }),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+  /** Business date (nightclub nights end at the tenant's day-start hour). */
+  date: date('date').notNull(),
+  amount: money('amount').notNull().default(0),
+  items: integer('items').notNull().default(0),
+  categories: jsonb('categories').$type<string[]>().notNull().default([]),
+  /** counter | pos | order_slip | reservation | import */
+  source: text('source').notNull(),
+  externalRef: text('external_ref'),
+  reservationId: uuid('reservation_id'),
+  orderSlipId: uuid('order_slip_id').references(() => orderSlips.id, { onDelete: 'set null' }),
+  serverEmployeeId: uuid('server_employee_id').references(() => employees.id, { onDelete: 'set null' }),
+  pointsEarned: integer('points_earned').notNull().default(0),
+  note: text('note'),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('crm_visits_ref').on(t.tenantId, t.source, t.externalRef), index('crm_visits_customer').on(t.customerId, t.date), index('crm_visits_tenant_date').on(t.tenantId, t.date)]);
+
+/** Points ledger (earn / bonus / redeem / adjust / expire). Balance = sum. */
+export const crmPoints = pgTable('crm_points', {
+  id: id(),
+  tenantId: tenantId(),
+  customerId: uuid('customer_id').notNull().references(() => crmCustomers.id, { onDelete: 'cascade' }),
+  visitId: uuid('visit_id').references(() => crmVisits.id, { onDelete: 'set null' }),
+  kind: text('kind').$type<'earn' | 'bonus' | 'redeem' | 'adjust' | 'expire'>().notNull(),
+  points: integer('points').notNull(),
+  rewardKey: text('reward_key'),
+  note: text('note'),
+  date: date('date').notNull(),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: createdAt(),
+}, (t) => [index('crm_points_customer').on(t.customerId)]);
+
+/** Table reservations / guestlist (nightclub VIP workflow). */
+export const crmReservations = pgTable('crm_reservations', {
+  id: id(),
+  tenantId: tenantId(),
+  customerId: uuid('customer_id').notNull().references(() => crmCustomers.id, { onDelete: 'cascade' }),
+  branchId: uuid('branch_id').references(() => branches.id, { onDelete: 'set null' }),
+  date: date('date').notNull(),
+  arrivalTime: text('arrival_time'),
+  partySize: integer('party_size').notNull().default(2),
+  tableArea: text('table_area'),
+  minSpend: money('min_spend').notNull().default(0),
+  deposit: money('deposit').notNull().default(0),
+  status: text('status').$type<import('../crm/core.js').ReservationStatus>().notNull().default('confirmed'),
+  hostEmployeeId: uuid('host_employee_id').references(() => employees.id, { onDelete: 'set null' }),
+  promoterEmployeeId: uuid('promoter_employee_id').references(() => employees.id, { onDelete: 'set null' }),
+  notes: text('notes'),
+  actualSpend: money('actual_spend'),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('crm_reservations_date').on(t.tenantId, t.date)]);
+
+export const crmCampaigns = pgTable('crm_campaigns', {
+  id: id(),
+  tenantId: tenantId(),
+  name: text('name').notNull(),
+  channel: text('channel').$type<import('../crm/engine.js').Channel>().notNull().default('sms'),
+  template: text('template').notNull(),
+  filter: jsonb('filter').$type<AudienceFilter>().notNull().default({}),
+  holdoutPct: integer('holdout_pct').notNull().default(10),
+  status: text('status').$type<'draft' | 'sent'>().notNull().default('draft'),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  /** Guests deliberately not messaged: the control group for measuring lift. */
+  holdoutIds: jsonb('holdout_ids').$type<string[]>().notNull().default([]),
+  attributionDays: integer('attribution_days').notNull().default(14),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: createdAt(),
+});
+
+/** Every outbound message (campaign, automation or one-off) — the outbox and the audit trail. */
+export const crmMessages = pgTable('crm_messages', {
+  id: id(),
+  tenantId: tenantId(),
+  customerId: uuid('customer_id').references(() => crmCustomers.id, { onDelete: 'set null' }),
+  campaignId: uuid('campaign_id').references(() => crmCampaigns.id, { onDelete: 'set null' }),
+  automationKey: text('automation_key'),
+  channel: text('channel').$type<import('../crm/engine.js').Channel>().notNull(),
+  purpose: text('purpose').$type<import('../crm/engine.js').Purpose>().notNull(),
+  to: text('to').notNull(),
+  body: text('body').notNull(),
+  status: text('status').$type<'queued' | 'sent' | 'simulated' | 'failed' | 'skipped'>().notNull().default('queued'),
+  provider: text('provider').notNull(),
+  providerRef: text('provider_ref'),
+  error: text('error'),
+  parts: integer('parts').notNull().default(1),
+  cost: money('cost').notNull().default(0),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: createdAt(),
+}, (t) => [index('crm_messages_tenant').on(t.tenantId, t.createdAt), index('crm_messages_customer').on(t.customerId)]);
+
+export const crmAutomations = pgTable('crm_automations', {
+  id: id(),
+  tenantId: tenantId(),
+  key: text('key').notNull(),
+  name: text('name').notNull(),
+  trigger: text('trigger').$type<import('../crm/engine.js').AutomationTrigger>().notNull(),
+  enabled: boolean('enabled').notNull().default(true),
+  channel: text('channel').$type<import('../crm/engine.js').Channel>().notNull().default('sms'),
+  days: integer('days').notNull().default(0),
+  filter: jsonb('filter').$type<AudienceFilter>().notNull().default({}),
+  template: text('template').notNull(),
+  bonusPoints: integer('bonus_points'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  lastRunAt: timestamp('last_run_at', { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex('crm_automations_key').on(t.tenantId, t.key)]);

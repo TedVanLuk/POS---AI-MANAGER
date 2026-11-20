@@ -9,6 +9,13 @@ const env = z.object({
   PORT: z.coerce.number().default(4000),
   CORS_ORIGINS: z.string().default(''),
   NODE_ENV: z.string().default('development'),
+  /** CRM messaging: "log" records messages as simulated (no SMS leaves the server); "semaphore" sends real SMS. */
+  SMS_PROVIDER: z.enum(['log', 'semaphore']).default('log'),
+  SEMAPHORE_API_KEY: z.string().optional(),
+  /** Shared secret for the inbound SMS webhook (STOP replies): /api/crm/inbound/sms?key=… */
+  CRM_INBOUND_SECRET: z.string().optional(),
+  /** Run CRM automations every hour in the API process ("off" when a separate worker does it). */
+  CRM_AUTOMATIONS: z.enum(['on', 'off']).default('on'),
 }).parse(process.env);
 
 export const config = {
@@ -19,4 +26,8 @@ export const config = {
   port: env.PORT,
   corsOrigins: env.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean),
   isProd: env.NODE_ENV === 'production',
+  smsProvider: env.SMS_PROVIDER,
+  semaphoreApiKey: env.SEMAPHORE_API_KEY || undefined,
+  crmInboundSecret: env.CRM_INBOUND_SECRET || undefined,
+  crmAutomations: env.CRM_AUTOMATIONS === 'on',
 };

@@ -25,6 +25,15 @@ export default function AdminLayout() {
       ['/admin/payroll', 'Payroll', 'wallet', true],
       ['/admin/efficiency', 'Server efficiency', 'receipt', true],
     ] },
+    { title: 'Marketing', links: [
+      ['/admin/marketing', 'AI Marketing', 'megaphone', true],
+      ['/admin/marketing/guests', 'Guests', 'star', true],
+      ['/admin/marketing/tonight', 'Tonight & tables', 'calendar', true],
+      ['/admin/marketing/counter', 'Counter check-in', 'phone', true],
+      ['/admin/marketing/campaigns', 'Campaigns', 'send', true],
+      ['/admin/marketing/automations', 'Automations', 'repeat', true],
+      ['/admin/marketing/settings', 'Marketing settings', 'gift', isAdmin(me?.role)],
+    ] },
     { title: 'Company', links: [
       ['/admin/policy', 'Company Policy', 'book', true],
       ['/admin/management', 'Management', 'org', true],
@@ -37,7 +46,7 @@ export default function AdminLayout() {
     <div className="app">
       <div className="frame">
         <nav className="rail" aria-label="Main menu">
-          <div className="brand"><div className="logo" aria-hidden><span>AIM</span></div><div><b>AI Manager HR</b><span>{me?.tenantName}</span></div></div>
+          <div className="brand"><div className="logo" aria-hidden><span>AIM</span></div><div><b>AI Manager</b><span>{me?.tenantName}</span></div></div>
           {groups.map((g) => {
             const visible = g.links.filter((l) => l[3]);
             if (!visible.length) return null;
@@ -45,7 +54,7 @@ export default function AdminLayout() {
               <div key={g.title} style={{ display: 'contents' }}>
                 <div className="group">{g.title}</div>
                 {visible.map(([to, label, icon]) => (
-                  <NavLink key={to} to={to} end={to === '/admin'} className={({ isActive }) => `rail-item ${isActive ? 'active' : ''}`}>
+                  <NavLink key={to} to={to} end={to === '/admin' || to === '/admin/marketing'} className={({ isActive }) => `rail-item ${isActive ? 'active' : ''}`}>
                     <span className="ico"><Icon name={icon} /></span><span>{label}</span>
                   </NavLink>
                 ))}

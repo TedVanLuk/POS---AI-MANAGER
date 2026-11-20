@@ -38,6 +38,7 @@ export function withDefaults(s: Partial<TenantSettings> | null | undefined): Ten
       components: { ...DEFAULT_SETTINGS.payroll.components, ...(s?.payroll?.components ?? {}) },
     },
     departments: s?.departments ?? [],
+    ...(s?.crm ? { crm: s.crm } : {}),
     paySheets: s?.paySheets ?? [...new Set((s?.departments ?? []).map((d) => d.paySheet).filter((x): x is string => !!x))],
   };
 }

@@ -10,16 +10,19 @@ import type { UserPrincipal } from '../plugins/auth.js';
 import { summarize } from '../attendance/engine.js';
 import { getDayRecords, getTenant } from '../attendance/service.js';
 import { efficiencyMetrics, fighterCards, serialGaps } from '../stats/service.js';
+import { campaignResult, overview, recognition } from '../crm/core.js';
+import { loadProfiles } from '../crm/service.js';
 
 const MODEL = 'claude-opus-5-5';
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('YYYY-MM-DD');
 
-const SYSTEM = `You are "AI Manager", the HR analyst inside AI Manager HR, a timekeeping and payroll system used by Philippine businesses.
+const SYSTEM = `You are "AI Manager", the HR and marketing analyst inside AI Manager, a timekeeping, payroll and guest CRM system used by Philippine hospitality businesses.
 You answer questions from the business owner/admin using ONLY the data returned by your tools. Never invent numbers; if data is missing, say so.
 - Amounts are Philippine pesos (₱) unless stated otherwise. Format money like ₱12,345.67.
 - Times are in the tenant's local timezone.
 - Be concise and practical: lead with the answer, then the supporting figures (a short table is fine), then at most 2 concrete recommendations when useful.
 - For labor-law or penalty questions, note that wage deductions in the Philippines are restricted (Labor Code Art. 113) and suggest confirming with HR/legal when relevant.
+- For guests/marketing (CRM): talk about retention and revenue, not vanity counts. Campaign results are only "proven" when measured against the holdout group; say so. Never suggest messaging guests who have no marketing consent (Data Privacy Act, NPC Circular 2023-04).
 - You have read-only access. If asked to change data, explain where in the app the admin can do it (Payroll → run → edit line with a reason, Penalties, Attendance corrections, etc.).`;
 
 /** Read-only, tenant-scoped tools. The tenant comes from the logged-in admin, never from the model. */
@@ -128,6 +131,36 @@ function buildTools(p: UserPrincipal, tz: string) {
           .where(and(eq(schema.managementNotes.tenantId, p.tenantId), employeeId ? eq(schema.managementNotes.employeeId, employeeId) : undefined))
           .orderBy(desc(schema.managementNotes.createdAt)).limit(100);
         return json(rows.map((r) => ({ name: `${r.firstName} ${r.lastName}`, date: r.n.createdAt, category: r.n.category, title: r.n.title, body: r.n.body, rating: r.n.rating })));
+      },
+    }),
+    betaZodTool({
+      name: 'get_crm_overview',
+      description: 'Guest CRM snapshot: guests, consent rate, last-30-day identified revenue vs previous 30, repeat rate, RFM segments with spend, tiers, 6-month trend (new vs returning), cohort retention, recent campaign lift, VIPs who are overdue, top guests.',
+      inputSchema: z.object({}),
+      run: async () => {
+        const d = await loadProfiles(p.tenantId);
+        return json(overview({ profiles: d.profiles, visits: d.rows.visits, messages: d.rows.messages, campaigns: d.rows.campaigns, settings: d.settings, today: d.today }));
+      },
+    }),
+    betaZodTool({
+      name: 'find_guests',
+      description: 'Search CRM guests (customers) by name or segment/tag/tier. Returns spend, visits, last visit, tier, tags, points and whether they can receive marketing SMS. Phone numbers are not returned.',
+      inputSchema: z.object({ query: z.string().optional(), segment: z.string().optional().describe('champion, loyal, cant_lose, at_risk, new, promising, need_attention, hibernating, lost, no_visits'), tag: z.string().optional(), limit: z.number().int().min(1).max(100).optional() }),
+      run: async ({ query, segment, tag, limit }) => {
+        const d = await loadProfiles(p.tenantId);
+        const q = query?.toLowerCase();
+        return json(d.profiles.filter((x) => !x.erasedAt && (!q || x.name.toLowerCase().includes(q)) && (!segment || x.segment === segment) && (!tag || x.tags.includes(tag)))
+          .sort((a, b) => b.stats.spend365 - a.stats.spend365).slice(0, limit ?? 30)
+          .map((x) => ({ id: x.id, name: x.name, tier: x.tier, segment: x.segment, tags: x.tags, visits: x.stats.visits, spend365: x.stats.spend365, avgSpend: x.stats.avgSpend, lastVisit: x.stats.lastVisit, overdue: x.stats.overdue, points: x.pointsBalance, canMarketSms: x.marketable.sms, summary: recognition(x) })));
+      },
+    }),
+    betaZodTool({
+      name: 'get_campaign_results',
+      description: 'Marketing campaigns with measured results: messaged vs holdout conversion rate, lift in percentage points, incremental revenue, message cost and ROI.',
+      inputSchema: z.object({}),
+      run: async () => {
+        const d = await loadProfiles(p.tenantId);
+        return json(d.rows.campaigns.map((c) => ({ name: c.name, status: c.status, sentAt: c.sentAt, filter: c.filter, result: campaignResult(c, d.rows.messages, d.rows.visits, d.settings, d.today) })));
       },
     }),
   ];

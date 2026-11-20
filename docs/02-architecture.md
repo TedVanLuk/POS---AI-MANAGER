@@ -42,6 +42,8 @@
 ## Data model (core tables)
 `tenants, branches, users, employees, work_schedules, devices, fingerprint_templates, attendance_punches, holidays, payroll_runs, payslips, payslip_lines, penalty_rules, penalties, order_slips, management_notes, audit_logs` — see `server/src/db/schema.ts`.
 
+AI Marketing (CRM): `crm_customers, crm_consent_events, crm_visits, crm_points, crm_reservations, crm_campaigns, crm_messages, crm_automations`. Design and data-privacy handling: [05-ai-marketing-crm.md](05-ai-marketing-crm.md).
+
 ## Payroll lifecycle
 ```
 draft ──(compute/re-compute)──► review ──(approve, admin)──► approved ──(mark paid)──► paid
@@ -57,5 +59,5 @@ draft ──(compute/re-compute)──► review ──(approve, admin)──►
 2. Government reports: SSS R3/R5, PhilHealth RF-1, Pag-IBIG MCRF, BIR 1601-C, 2316, alphalist
 3. Bank payroll file export (BDO, BPI, Metrobank formats), e-payslips via email/SMS
 4. Loans and cash advances with amortization
-5. POS integration (order slips pushed live from AI Manager POS)
+5. POS integration (order slips pushed live from AI Manager POS; CRM already accepts bills at `POST /api/crm/pos/transactions`)
 6. Postgres RLS, SSO, 2FA for admins

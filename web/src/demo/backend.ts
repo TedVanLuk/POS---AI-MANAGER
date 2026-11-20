@@ -22,6 +22,7 @@ import { tablesFor } from '../../../server/src/payroll/statutory-ph';
 import { DEFAULT_SETTINGS, withDefaults } from '../../../server/src/settings';
 import type { PenaltyRuleConfig, TenantSettings } from '../../../server/src/db/schema';
 import { ApiError } from '../api';
+import { crmAiTools, registerCrm, seedCrm, type CrmStore } from './crm';
 
 // ---------------------------------------------------------------- store types
 type Role = 'owner' | 'admin' | 'manager' | 'employee';
@@ -63,12 +64,13 @@ interface Store {
   punches: Punch[]; holidays: Holiday[]; runs: Run[]; payslips: Payslip[]; lines: Line[]; rules: Rule[];
   penalties: Penalty[]; slips: Slip[]; notes: Note[]; audit: Audit[];
   roster: RosterEntry[]; stats: StatRow[]; reviews: Review[]; paySheets: PaySheet[]; policy: Record<string, RoleOverride>; mgmt: MgmtReview[];
+  crm: CrmStore;
 }
 interface MgmtReview { id: string; employeeId: string; date: string; reviewerRoleKey: string | null; reviewerName: string; input: ReviewInput; category: number; suggestedCategory: number | null; resultsIndex: number | null; result: string; analysis: string; action: string; createdBy: string | null; createdAt: string }
 interface PaySheet { id: string; periodStart: string; periodEnd: string; status: 'draft' | 'final'; cashReceived: number; rows: SheetRow[]; notes: string | null; createdBy: string; finalizedBy: string | null; finalizedAt: string | null; createdAt: string; updatedAt: string }
 
 const STORE_KEY = 'aim.demo.store.v1';
-const STORE_VERSION = 7;
+const STORE_VERSION = 8;
 export const DEMO_DEVICE_TOKEN = 'demo-kiosk-token-change-me-0000000001';
 const TZ = 'Asia/Manila';
 
@@ -327,7 +329,7 @@ function getSample() {
   if (!samplePromise) samplePromise = c?.use ? (c.use('sample') as Promise<SampleFn | null>).catch(() => null) : Promise.resolve(null);
   return samplePromise;
 }
-const AI_RULES = `You are "AI Manager", the HR analyst inside AI Manager HR, a timekeeping and payroll system for Mega Dance Center, a nightclub in the Philippines (demo data based on the client's schedule and servers tracker). Servers track Orders, Sales Comms. (packages), LD's (lady's drinks) and PO.
+const AI_RULES = `You are "AI Manager", the HR and marketing analyst inside AI Manager (HR + guest CRM), a timekeeping, payroll and marketing system for Mega Dance Center, a nightclub in the Philippines (demo data based on the client's schedule and servers tracker). Servers track Orders, Sales Comms. (packages), LD's (lady's drinks) and PO.
 Answer the owner's questions using ONLY data returned by your tools; never invent numbers. Amounts are Philippine pesos (₱, format like ₱12,345.67). Times are Asia/Manila.
 Be concise: lead with the answer, then the key figures (a short plain-text table is fine), then at most 2 practical recommendations. Plain text only, no markdown headings.
 For penalty or deduction questions, note that the Labor Code (Art. 113) restricts wage deductions. You are read-only: if asked to change data, say where in the app to do it.
@@ -346,6 +348,7 @@ function aiTools() {
     { name: 'get_payroll_runs', description: 'Payroll runs with status and totals (gross, deductions, net).', execute: () => compact(s.runs.map((r) => { const ps = s.payslips.filter((p) => p.runId === r.id); return { id: r.id, periodStart: r.periodStart, periodEnd: r.periodEnd, status: r.status, employees: ps.length, gross: ps.reduce((a, p) => a + p.gross, 0), deductions: ps.reduce((a, p) => a + p.totalDeductions, 0), net: ps.reduce((a, p) => a + p.net, 0) }; })) },
     { name: 'get_payroll_run_detail', description: 'Per-employee payslip lines for one payroll run (amounts, manual edits and reasons).', inputSchema: { type: 'object', properties: { runId: { type: 'string' } }, required: ['runId'] }, execute: (i: Record<string, unknown>) => compact(s.payslips.filter((p) => p.runId === String(i.runId)).map((p) => ({ name: name(findEmp(p.employeeId)), gross: p.gross, deductions: p.totalDeductions, net: p.net, lines: s.lines.filter((l) => l.payslipId === p.id && l.category !== 'employer').map((l) => ({ label: l.label, category: l.category, amount: l.amount, enabled: l.enabled, manual: l.isManual, reason: l.editReason })) }))) },
     { name: 'get_penalties', description: 'Penalties with status pending/approved/waived (optional status filter).', inputSchema: { type: 'object', properties: { status: { type: 'string', enum: ['pending', 'approved', 'waived'] } } }, execute: (i: Record<string, unknown>) => s.penalties.filter((p) => !i.status || p.status === i.status).slice(0, 150).map((p) => ({ name: name(findEmp(p.employeeId)), date: p.date, kind: p.kind, amount: p.amount, reason: p.reason, status: p.status })) },
+    ...crmAiTools(() => store().crm, TZ),
     { name: 'get_management_notes', description: 'Management notes (commendations, coaching, warnings, incidents).', execute: () => s.notes.map((n) => ({ name: name(findEmp(n.employeeId)), date: n.createdAt.slice(0, 10), category: n.category, title: n.title, body: n.body, rating: n.rating })) },
   ];
 }
@@ -1107,6 +1110,13 @@ on('POST', '/api/ai/chat', (c, _p, _q, b) => { requireUser(c, ADMIN); const m = 
 on('GET', '/api/health', () => ({ ok: true }));
 
 /** Entry point used by api.ts in the demo build. */
+registerCrm({
+  on, crm: () => store().crm, business: () => store().tenant.name,
+  employees: () => store().employees,
+  requireUser: (c, roles) => requireUser(c as Ctx, roles), requireDevice: (c) => requireDevice(c as Ctx),
+  fail, audit: (c, e) => audit(c as Ctx, e), uid, tz: TZ,
+});
+
 export async function demoRequest(method: string, path: string, body: unknown, token: string | null, deviceToken: string | null) {
   const s = store();
   const url = new URL(path, 'http://demo.local');
@@ -1133,6 +1143,7 @@ function seed(): Store {
     branches: [{ id: uid(), name: 'MDC Main', address: 'Mega Dance Center' }],
     schedules: [], employees: [], users: [], devices: [], templates: [], punches: [], holidays: [], runs: [], payslips: [], lines: [], rules: [], penalties: [], slips: [], notes: [], audit: [],
     roster: [], stats: [], reviews: [], paySheets: [], policy: {}, mgmt: [],
+    crm: undefined as unknown as CrmStore,
   };
   db = s;
   const branchId = s.branches[0].id;
@@ -1234,6 +1245,8 @@ function seed(): Store {
   // The client's Oct. 5-11 weekly payroll, row for row.
   const link = nameLinker(s.employees.map((e) => ({ id: e.id, name: name(e), department: e.department })));
   const P = MDC_PAYROLL_OCT_5_11;
+  // AI Marketing: nightclub VIP playbook with sample guests (VIP tables + shisha regulars).
+  s.crm = seedCrm({ tz: TZ, uid, emp: s.employees });
   s.paySheets.push({ id: uid(), periodStart: P.periodStart, periodEnd: P.periodEnd, status: 'final', cashReceived: P.cashReceived, rows: rowsFromPaper(P.rows, uid, link), notes: 'Imported from the Oct. 5-11 payroll PDF', createdBy: owner.id, finalizedBy: owner.id, finalizedAt: '2026-10-12T04:00:00.000Z', createdAt: created, updatedAt: created });
   return s;
 }
