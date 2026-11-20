@@ -13,6 +13,8 @@ import { monthWeeks, rankMetric, trackerTotals, TRACKER_METRICS, type StatRow } 
 import { MDC_DEPARTMENTS, MDC_PAYROLL_OCT_5_11, MDC_STAFF, MDC_TRACKER } from '../../../server/src/db/mdc-data';
 import { COMMISSIONS, HANDBOOK_RULES, MDC_HANDBOOK, TABLES } from '../../../server/src/policy/handbook';
 import { composeJob, createsCycle, resolveRoles, type RoleOverride } from '../../../server/src/policy/jobs';
+import { analyse, mgmtOverview, operationalFor, SCALE, scheduledHoursFor, type ReviewInput } from '../../../server/src/mgmt/sevenstep';
+import { sampleReviews } from '../../../server/src/mgmt/sample';
 import { applyRowChanges, buildSheetRows, computeSheet, EDITABLE_FIELDS, nameLinker, periodLabel, rowsFromPaper, type SheetRow, type SheetSource } from '../../../server/src/payroll/sheet';
 import { deriveRates } from '../../../server/src/payroll/engine';
 import { currentCutoff, dailyTrend, overtimeLeaders } from '../../../server/src/stats/dashboard';
@@ -60,12 +62,13 @@ interface Store {
   schedules: Schedule[]; employees: Employee[]; users: User[]; devices: Device[]; templates: Template[];
   punches: Punch[]; holidays: Holiday[]; runs: Run[]; payslips: Payslip[]; lines: Line[]; rules: Rule[];
   penalties: Penalty[]; slips: Slip[]; notes: Note[]; audit: Audit[];
-  roster: RosterEntry[]; stats: StatRow[]; reviews: Review[]; paySheets: PaySheet[]; policy: Record<string, RoleOverride>;
+  roster: RosterEntry[]; stats: StatRow[]; reviews: Review[]; paySheets: PaySheet[]; policy: Record<string, RoleOverride>; mgmt: MgmtReview[];
 }
+interface MgmtReview { id: string; employeeId: string; date: string; reviewerRoleKey: string | null; reviewerName: string; input: ReviewInput; category: number; suggestedCategory: number | null; resultsIndex: number | null; result: string; analysis: string; action: string; createdBy: string | null; createdAt: string }
 interface PaySheet { id: string; periodStart: string; periodEnd: string; status: 'draft' | 'final'; cashReceived: number; rows: SheetRow[]; notes: string | null; createdBy: string; finalizedBy: string | null; finalizedAt: string | null; createdAt: string; updatedAt: string }
 
 const STORE_KEY = 'aim.demo.store.v1';
-const STORE_VERSION = 6;
+const STORE_VERSION = 7;
 export const DEMO_DEVICE_TOKEN = 'demo-kiosk-token-change-me-0000000001';
 const TZ = 'Asia/Manila';
 
@@ -667,6 +670,93 @@ on('DELETE', '/api/pay-sheets/:id', (c, p) => {
   return { ok: true };
 });
 
+// 7-step management system
+function mgmtHistory(employeeId: string, before: string) {
+  return store().mgmt.filter((r) => r.employeeId === employeeId && r.date < before).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10)
+    .map((r) => ({ id: r.id, date: r.date, category: r.category, resultsIndex: r.resultsIndex, reviewerName: r.reviewerName, action: r.action }));
+}
+function mgmtList(f: { from?: string | null; to?: string | null; employeeId?: string | null }) {
+  const s = store();
+  return s.mgmt.filter((r) => (!f.from || r.date >= f.from) && (!f.to || r.date <= f.to) && (!f.employeeId || r.employeeId === f.employeeId))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))
+    .flatMap((r) => { const e = s.employees.find((x) => x.id === r.employeeId); return e ? [{ ...r, employeeName: name(e), department: e.department, position: e.position, photoUrl: e.photoUrl ?? null }] : []; });
+}
+on('GET', '/api/mgmt/prefill', (c, _p, q) => {
+  requireUser(c, STAFF);
+  const s = store(); const st = settings();
+  const e = findEmp(q.get('employeeId') ?? '');
+  const date = q.get('date') ?? today();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) fail(400, 'Choose a date');
+  const dep = (st.departments ?? []).find((d) => d.name === e.department);
+  const day = dayRecords(date, date, [e.id]).records.get(e.id)?.[0];
+  const daily = deriveRates(e, st.payroll).daily;
+  const from28 = DateTime.fromISO(date).minus({ days: 28 }).toISODate()!;
+  const stats = s.stats.filter((x) => x.employeeId === e.id && x.date >= from28 && x.date <= date);
+  const slipDay = (iso: string) => DateTime.fromISO(iso, { zone: TZ }).minus({ hours: 8 }).toISODate()!;
+  const revenueByDay = new Map<string, number>();
+  for (const sl of s.slips.filter((x) => x.serverEmployeeId === e.id && x.status === 'closed')) { const d = slipDay(sl.openedAt); if (d >= from28 && d <= date) revenueByDay.set(d, (revenueByDay.get(d) ?? 0) + sl.amount); }
+  const past = [...revenueByDay].filter(([d]) => d < date).map(([, v]) => v);
+  const all = resolveRoles(s.policy);
+  const staffRole = all.find((r) => r.key === `staff:${e.department}`);
+  const reviewer = staffRole?.reportsTo ? all.find((r) => r.key === staffRole.reportsTo) : undefined;
+  return {
+    employee: { id: e.id, name: name(e), department: e.department, position: e.position, photoUrl: e.photoUrl ?? null, dailyRate: Math.round(daily * 100) / 100 },
+    attendance: day ? { scheduled: day.scheduled, present: day.present, firstIn: day.firstIn, lastOut: day.lastOut, lateMinutes: day.lateMinutes, workedHours: Math.round((day.workedMinutes / 60) * 100) / 100 } : null,
+    prefill: {
+      scheduledHours: day && !day.scheduled && !day.present ? 0 : scheduledHoursFor(dep?.shiftStart, dep?.shiftEnd),
+      productiveHours: day ? Math.round((day.workedMinutes / 60) * 10) / 10 : null,
+      operational: operationalFor(e.department, { today: stats.find((x) => x.date === date) ?? null, history: stats.filter((x) => x.date < date && x.orders + x.lds + x.salesComms > 0) }),
+      revenuePlan: past.length ? Math.round(past.reduce((a, b) => a + b, 0) / past.length) : null,
+      revenueFact: revenueByDay.get(date) ?? (e.department === 'Servers' ? 0 : null),
+      cost: day?.present ? Math.round(daily * 100) / 100 : 0,
+    },
+    reviewer: reviewer ? { key: reviewer.key, title: reviewer.title, holder: reviewer.holder } : null,
+    reviewers: all.filter((r) => r.tier !== 'staff' && r.tier !== 'team').map((r) => ({ key: r.key, title: r.title, holder: r.holder })),
+    history: mgmtHistory(e.id, date),
+  };
+});
+on('POST', '/api/mgmt/reviews', (c, _p, _q, b) => {
+  const u = requireUser(c, STAFF);
+  const e = findEmp(String(b.employeeId));
+  const date = String(b.date ?? '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) fail(400, 'Choose a date');
+  const reviewerName = String(b.reviewerName ?? '').trim();
+  if (!reviewerName) fail(400, 'Say who did the review');
+  const action = String(b.action ?? '').trim();
+  if (action.length < 3) fail(400, 'Write the action plan for tomorrow (step 7)');
+  const input = b.input as ReviewInput;
+  if (!input || !Array.isArray(input.operational)) fail(400, 'Missing review details');
+  for (const k of ['quantityScore', 'qualityScore'] as const) if (input[k] !== null && !SCALE.includes(input[k]!)) fail(400, 'Invalid score');
+  const a = analyse(input, mgmtHistory(e.id, date));
+  const category = b.category ? Number(b.category) : a.suggestedCategory;
+  if (!category || category < 1 || category > 5) fail(400, 'Score the quality or enter plan vs fact, and choose a category (step 6)');
+  const r: MgmtReview = { id: uid(), employeeId: e.id, date, reviewerRoleKey: (b.reviewerRoleKey as string) || null, reviewerName, input, category: category!, suggestedCategory: a.suggestedCategory, resultsIndex: a.resultsIndex, result: String(b.result ?? '').trim(), analysis: String(b.analysis ?? '').trim(), action, createdBy: u.id, createdAt: nowIso() };
+  store().mgmt.push(r);
+  audit(c, { entity: 'mgmt_review', entityId: r.id, action: 'create', after: { employeeId: e.id, date, category, suggested: a.suggestedCategory } });
+  return { id: r.id, category, analysis: a };
+});
+on('GET', '/api/mgmt/reviews', (c, _p, q) => { requireUser(c, STAFF); return mgmtList({ from: q.get('from'), to: q.get('to'), employeeId: q.get('employeeId') }).map(({ input: _i, ...r }) => r); });
+on('GET', '/api/mgmt/reviews/:id', (c, p) => {
+  requireUser(c, STAFF);
+  const r = mgmtList({}).find((x) => x.id === p.id) ?? notFound('Review');
+  return { ...r, analysisData: analyse(r.input, mgmtHistory(r.employeeId, r.date)) };
+});
+on('DELETE', '/api/mgmt/reviews/:id', (c, p) => {
+  requireUser(c, ADMIN);
+  const s = store();
+  const r = s.mgmt.find((x) => x.id === p.id) ?? notFound('Review');
+  s.mgmt = s.mgmt.filter((x) => x !== r);
+  audit(c, { entity: 'mgmt_review', entityId: r.id, action: 'delete', before: { employeeId: r.employeeId, date: r.date, category: r.category } });
+  return { ok: true };
+});
+on('GET', '/api/mgmt/overview', (c, _p, q) => {
+  requireUser(c, STAFF);
+  const s = store();
+  const to = q.get('to') ?? today();
+  const from = q.get('from') ?? DateTime.fromISO(to).minus({ days: 6 }).toISODate()!;
+  return mgmtOverview({ emps: s.employees.filter((e) => e.active).map((e) => ({ id: e.id, name: name(e), department: e.department })), reviews: mgmtList({ from: DateTime.fromISO(to).minus({ days: 30 }).toISODate()!, to }), roles: resolveRoles(s.policy), from, to });
+});
+
 // company policy: handbook, hierarchy, job descriptions
 function policyContext() {
   const s = store();
@@ -1042,7 +1132,7 @@ function seed(): Store {
     tenant: { id: uid(), name: 'Mega Dance Center', timezone: TZ, currency: 'PHP', settings: { ...structuredClone(DEFAULT_SETTINGS), departments: structuredClone(MDC_DEPARTMENTS), paySheets: [...MDC_PAYROLL_OCT_5_11.sheets] } },
     branches: [{ id: uid(), name: 'MDC Main', address: 'Mega Dance Center' }],
     schedules: [], employees: [], users: [], devices: [], templates: [], punches: [], holidays: [], runs: [], payslips: [], lines: [], rules: [], penalties: [], slips: [], notes: [], audit: [],
-    roster: [], stats: [], reviews: [], paySheets: [], policy: {},
+    roster: [], stats: [], reviews: [], paySheets: [], policy: {}, mgmt: [],
   };
   db = s;
   const branchId = s.branches[0].id;
@@ -1134,6 +1224,12 @@ function seed(): Store {
   run.status = 'approved'; run.approvedBy = owner.id; run.approvedAt = created;
   audit(ctx, { entity: 'payroll_run', entityId: run.id, action: 'approve', before: { status: 'review' }, after: { status: 'approved' } });
   generatePenalties(prevEnd.plus({ days: 1 }).toISODate()!, t0.toISODate()!);
+
+  // Example 7-step reviews for the last three nights.
+  const reviewPeople = ['Servers', 'Bartenders', 'Bouncers', 'Kitchen', 'Cashiers', 'Promoters', 'Shisha']
+    .flatMap((d) => s.employees.filter((e) => e.department === d).slice(0, d === 'Servers' ? 8 : 2))
+    .map((e) => ({ id: e.id, name: e.firstName, department: e.department, dailyRate: e.rate }));
+  for (const r of sampleReviews(reviewPeople, [3, 2, 1].map((n) => t0.minus({ days: n }).toISODate()!))) s.mgmt.push({ ...r, id: uid(), createdBy: owner.id, createdAt: created });
 
   // The client's Oct. 5-11 weekly payroll, row for row.
   const link = nameLinker(s.employees.map((e) => ({ id: e.id, name: name(e), department: e.department })));

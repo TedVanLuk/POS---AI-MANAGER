@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { isAdmin, useAuth } from '../auth';
 import { useApi } from '../hooks';
@@ -11,13 +11,14 @@ import type { ResolvedRole } from '../../../server/src/policy/jobs';
 
 interface HandbookRes { company: string; handbook: { title: string; company: string; sections: HandbookSection[] } }
 export interface RolesRes { company: string; roles: ResolvedRole[]; headcount: Record<string, number>; departments: string[] }
-const TABS = [['handbook', 'Employee handbook'], ['hierarchy', 'Hierarchy'], ['jobs', 'Job descriptions']] as const;
+const TABS = [['handbook', 'Employee handbook'], ['jobs', 'Job descriptions']] as const;
 type Tab = typeof TABS[number][0];
 
 /** Company Policy: the employee handbook, the company hierarchy and a job description for every role. */
 export default function CompanyPolicy() {
   const [params, setParams] = useSearchParams();
   const tab: Tab = TABS.find(([k]) => k === params.get('tab'))?.[0] ?? 'handbook';
+  if (params.get('tab') === 'hierarchy') return <Navigate to="/admin/management" replace />;
   return (
     <>
       <div className="page-head">
@@ -27,7 +28,6 @@ export default function CompanyPolicy() {
         {TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'active' : ''} onClick={() => setParams(k === 'handbook' ? {} : { tab: k }, { replace: true })}>{l}</button>)}
       </div>
       {tab === 'handbook' && <Handbook />}
-      {tab === 'hierarchy' && <Hierarchy />}
       {tab === 'jobs' && <JobList />}
     </>
   );
@@ -96,7 +96,7 @@ function HbBlock({ b }: { b: Block }) {
       <div className="hb-org-row">
         {[['Ms. Ma. Julien Castillo', 'Marketing & Entertainment Manager'], ['Mrs. Valentina Villaruel Mabatas', 'General Admin']].map(([n, t]) => <div key={t} className="org-card mgmt"><b>{n}</b><span>{t}</span></div>)}
       </div>
-      <Link to="/admin/policy?tab=hierarchy" className="btn sm">See the full hierarchy with all departments</Link>
+      <Link to="/admin/management" className="btn sm">See the current organizational chart</Link>
     </div>
   );
   if ('enforced' in b) return <div className="hb-enforced"><b>In the system</b><ul>{b.enforced.map((x, i) => <li key={i}>{x}</li>)}</ul></div>;
@@ -104,7 +104,8 @@ function HbBlock({ b }: { b: Block }) {
 }
 
 // ---------------------------------------------------------------- hierarchy
-function Hierarchy() {
+/** The hierarchy as an indented list (used on narrow screens and as the list view of the org chart). */
+export function Hierarchy({ vertical }: { vertical?: boolean }) {
   const { me } = useAuth();
   const roles = useApi<RolesRes>('/api/policy/roles');
   const [editing, setEditing] = useState<ResolvedRole | null>(null);
@@ -123,7 +124,7 @@ function Hierarchy() {
     const people = r.key.startsWith('staff:') && r.department ? roles.data!.headcount[r.department] ?? 0 : null;
     return (
       <div className={`org-node d${Math.min(depth, 4)}`}>
-        <div className={`org-card ${r.level}`}>
+        <div className={`org-card ${r.level} ${r.onChart ? '' : 'off'}`}>
           <button className="org-main" onClick={() => nav(`/admin/policy/jobs/${encodeURIComponent(r.key)}`)} title="Open job description">
             <span className="org-title">{r.title}</span>
             {people !== null
@@ -133,7 +134,7 @@ function Hierarchy() {
           {admin && <button className="org-edit" onClick={() => setEditing(r)} aria-label={`Edit ${r.title}`} title="Edit"><Icon name="dots" /></button>}
         </div>
         {children.length > 0 && (
-          <div className={depth < 2 ? 'org-row' : 'org-col'}>
+          <div className={depth < 2 && !vertical ? 'org-row' : 'org-col'}>
             {children.map((c) => <Node key={c.key} r={c} depth={depth + 1} />)}
           </div>
         )}
@@ -144,7 +145,7 @@ function Hierarchy() {
   return (
     <>
       <div className="row" style={{ marginBottom: 12 }}>
-        <span className="muted small">The CEO, COO, Marketing & Entertainment Manager and General Admin are from the handbook. The Operations Manager and the department heads complete the structure — assign who holds each role.</span>
+        <span className="muted small">From the company’s organizational chart. Roles with a dashed border are not on the chart and were placed with the closest manager.</span>
         <div className="spacer" />
         {vacant > 0 && <span className="badge warn">{vacant} roles to assign</span>}
         {admin && <button className="btn" onClick={() => setAdding(true)}><Icon name="plus" /> Add role</button>}
@@ -165,7 +166,7 @@ function Hierarchy() {
 
 /** Edit a role's title, holder and reporting line — or add a new role. */
 export function RoleEditor({ role, roles, onClose, onSaved }: { role?: ResolvedRole; roles: RolesRes; onClose: () => void; onSaved: () => Promise<void> }) {
-  const [f, setF] = useState({ title: role?.title ?? '', holder: role?.holder ?? '', reportsTo: role?.reportsTo ?? 'ops', department: role?.department ?? '', level: role?.level ?? 'head' });
+  const [f, setF] = useState({ title: role?.title ?? '', holder: role?.holder ?? '', reportsTo: role?.reportsTo ?? 'coo', department: role?.department ?? '', level: role?.level ?? 'head' });
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

@@ -27,6 +27,7 @@ export default function AdminLayout() {
     ] },
     { title: 'Company', links: [
       ['/admin/policy', 'Company Policy', 'book', true],
+      ['/admin/management', 'Management', 'org', true],
     ] },
     { title: 'System', links: [
       ['/admin/settings', 'Settings', 'settings', isAdmin(me?.role)],

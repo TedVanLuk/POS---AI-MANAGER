@@ -15,18 +15,25 @@ describe('company policy', () => {
       expect(head, `${d.name} head`).toBeTruthy();
       expect(['head', 'management']).toContain(head!.level);
     }
-    expect(roles.find((r) => r.key === 'staff:Servers')!.reportsTo).toBe('staff:Supervisors');
+    expect(roles.find((r) => r.key === 'staff:Servers')!.reportsTo).toBe('head:Servers');
+    expect(roles.find((r) => r.key === 'head:Servers')!.reportsTo).toBe('staff:Supervisors');
+    expect(roles.find((r) => r.key === 'staff:Champagne Girls')!.reportsTo).toBe('head:VIP Host');
     expect(new Set(allJobs().map((r) => r.key)).size).toBe(allJobs().length);
   });
 
-  it('builds one hierarchy under the CEO with the handbook names', () => {
+  it('builds one hierarchy under the CEO, as on the organizational chart', () => {
     const roles = resolveRoles({});
     for (const r of roles) {
       let cur: string | null = r.key; let steps = 0;
       while (cur && cur !== 'ceo' && steps++ < 20) cur = roles.find((x) => x.key === cur)!.reportsTo;
       expect(cur, r.key).toBe('ceo');
     }
-    expect(roles.find((r) => r.key === 'coo')!.holder).toBe('Mr. Tsvetan Lukarski');
+    expect(roles.find((r) => r.key === 'coo')!.holder).toBe('Tsvetan “Ted” Lukarski');
+    const heads = roles.filter((r) => r.no).sort((a, b) => a.no! - b.no!);
+    expect(heads.map((r) => r.no)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+    expect(heads.map((r) => r.holder)).toEqual(['Edwin', 'Lhaw', 'Ricky', 'Israel', 'Eka', 'Kimmy', 'Shantal', 'Khey, Jaysa, Charle', 'MJ / Ara', 'Kristal', 'Josh', 'Jhep', 'Jonel', 'Noah']);
+    expect(roles.find((r) => r.key === 'head:Maintenance')!.also).toEqual(['snl']);
+    expect(roles.some((r) => r.key === 'head:Champagne Girls')).toBe(false);
     expect(createsCycle(roles, 'coo', 'staff:Servers')).toBe(true);
     expect(createsCycle(roles, 'staff:Servers', 'ops')).toBe(false);
   });
@@ -36,7 +43,7 @@ describe('company policy', () => {
     const role = roles.find((r) => r.key === 'head:Bartenders')!;
     expect([role.title, role.holder, role.edited]).toEqual(['Bar Manager', 'Mjay', true]);
     const doc = composeJob(roles.find((r) => r.key === 'staff:Servers')!, { roles, departments: MDC_DEPARTMENTS, headcount: { Servers: 48 }, company: 'MDC' });
-    expect(doc.reportsTo?.title).toBe('Floor Supervisor');
+    expect(doc.reportsTo?.title).toBe('Head Server');
     expect(doc.schedule[0]).toContain('8:30 PM');
     expect(doc.commissions.some((c) => c.startsWith('Ladies drinks'))).toBe(true);
     expect(doc.requirements.join(' ')).toContain('NBI clearance');

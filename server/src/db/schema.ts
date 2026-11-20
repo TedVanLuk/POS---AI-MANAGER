@@ -412,3 +412,22 @@ export const policyDocs = pgTable('policy_docs', {
   updatedBy: uuid('updated_by').references(() => users.id),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex('policy_docs_tenant_key').on(t.tenantId, t.key)]);
+
+/** 7-Step Management System review of one specialist for one day, by a head of department or supervisor. */
+export const mgmtReviews = pgTable('mgmt_reviews', {
+  id: id(),
+  tenantId: tenantId(),
+  employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'cascade' }),
+  date: date('date').notNull(),
+  reviewerRoleKey: text('reviewer_role_key'),
+  reviewerName: text('reviewer_name').notNull(),
+  input: jsonb('input').$type<import('../mgmt/sevenstep.js').ReviewInput>().notNull(),
+  category: integer('category').notNull(),
+  suggestedCategory: integer('suggested_category'),
+  resultsIndex: numeric('results_index', { precision: 5, scale: 3, mode: 'number' }),
+  result: text('result').notNull().default(''),
+  analysis: text('analysis').notNull().default(''),
+  action: text('action').notNull(),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: createdAt(),
+}, (t) => [index('mgmt_reviews_tenant_date').on(t.tenantId, t.date), index('mgmt_reviews_employee').on(t.employeeId, t.date)]);

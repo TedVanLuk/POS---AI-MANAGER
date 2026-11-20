@@ -19,6 +19,8 @@ import AIChat from './admin/AIChat';
 import Settings from './admin/Settings';
 import CompanyPolicy from './admin/CompanyPolicy';
 import JobDescription from './admin/JobDescription';
+import Management from './admin/Management';
+import SevenStepReview from './admin/SevenStepReview';
 import Kiosk from './kiosk/Kiosk';
 import MePage from './me/MePage';
 
@@ -62,6 +64,8 @@ export default function App() {
         <Route path="ai" element={<AIChat />} />
         <Route path="policy" element={<CompanyPolicy />} />
         <Route path="policy/jobs/:key" element={<JobDescription />} />
+        <Route path="management" element={<Management />} />
+        <Route path="management/review" element={<SevenStepReview />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

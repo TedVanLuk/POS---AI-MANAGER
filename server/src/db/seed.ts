@@ -11,6 +11,7 @@ import { encrypt, sha256 } from '../lib/crypto.js';
 import { hashSecret } from '../modules/auth.routes.js';
 import { DEFAULT_SETTINGS } from '../settings.js';
 import { nameLinker, rowsFromPaper } from '../payroll/sheet.js';
+import { sampleReviews } from '../mgmt/sample.js';
 import { MDC_DEPARTMENTS, MDC_PAYROLL_OCT_5_11, MDC_STAFF, MDC_TRACKER } from './mdc-data.js';
 import { isOnDuty } from '../stats/roster.js';
 
@@ -139,6 +140,14 @@ async function main() {
     cashReceived: MDC_PAYROLL_OCT_5_11.cashReceived, rows: rowsFromPaper(MDC_PAYROLL_OCT_5_11.rows, randomUUID, link),
     createdBy: admin.id, finalizedBy: admin.id, finalizedAt: new Date('2026-10-12T04:00:00Z'), notes: 'Imported from the Oct. 5-11 payroll PDF',
   });
+
+  // Example 7-step reviews for the last three nights.
+  const reviewDepts = ['Servers', 'Bartenders', 'Bouncers', 'Kitchen', 'Cashiers', 'Promoters', 'Shisha'];
+  const reviewPeople = reviewDepts.flatMap((d) => emps.filter((e) => e.department === d).slice(0, d === 'Servers' ? 8 : 2))
+    .map((e) => ({ id: e.id, name: e.firstName, department: e.department, dailyRate: e.rate }));
+  const reviewDay = DateTime.now().setZone('Asia/Manila').startOf('day');
+  const samples = sampleReviews(reviewPeople, [3, 2, 1].map((n) => reviewDay.minus({ days: n }).toISODate()!));
+  await db.insert(schema.mgmtReviews).values(samples.map((r) => ({ ...r, tenantId, createdBy: admin.id })));
 
   console.log(`\nSeeded "${DEMO_TENANT}": ${emps.length} staff, ${punches.length} punches, ${stats.length} tracker days, Oct. 5-11 payroll`);
   console.log('  Owner:     admin@demo.ph / Admin123!');
