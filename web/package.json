@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "preview": "vite preview",
-    "build:demo": "tsc -p tsconfig.json --noEmit && vite build --mode demo && node scripts/inline-demo.mjs"
+    "build:demo": "tsc -p tsconfig.json --noEmit && vite build --mode demo && node scripts/inline-demo.mjs",
+    "build:demo-crm": "tsc -p tsconfig.json --noEmit && vite build --mode democrm && node scripts/inline-demo.mjs dist-demo-crm/ai-marketing-crm.html dist-demo-crm \"AI Marketing CRM\""
   },
   "devDependencies": {
     "@types/luxon": "^3.7.1",

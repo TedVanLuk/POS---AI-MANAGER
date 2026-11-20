@@ -192,3 +192,70 @@ function groupBy<T>(xs: T[], k: (x: T) => string) { const m = new Map<string, T[
 const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 export type { CustomerStats };
+
+// ---------------------------------------------------------------- spending performance
+export const SPEND_BUCKETS: [number, number | null, string][] = [
+  [0, 1000, '< ₱1k'], [1000, 2500, '₱1k–2.5k'], [2500, 5000, '₱2.5k–5k'], [5000, 10000, '₱5k–10k'], [10000, 25000, '₱10k–25k'],
+  [25000, 50000, '₱25k–50k'], [50000, 100000, '₱50k–100k'], [100000, 250000, '₱100k–250k'], [250000, null, '₱250k+'],
+];
+
+/**
+ * How customers spend over a period: concentration (Pareto), distribution, tiers, segments, categories,
+ * when they spend (business weekday × hour), who is growing or shrinking, and a leaderboard.
+ */
+export function spendingPerformance(d: { profiles: Profile[]; visits: VisitRow[]; today: string; tz: string; dayStartHour: number; days: number; segment?: string | null; tier?: string | null }) {
+  const keep = new Set(d.profiles.filter((p) => !p.erasedAt && (!d.segment || p.segment === d.segment) && (!d.tier || p.tier === d.tier)).map((p) => p.id));
+  const byId = new Map(d.profiles.map((p) => [p.id, p]));
+  const from = DateTime.fromISO(d.today).minus({ days: d.days - 1 }).toISODate()!;
+  const prevFrom = DateTime.fromISO(from).minus({ days: d.days }).toISODate()!;
+  const cur = d.visits.filter((v) => keep.has(v.customerId) && v.date >= from && v.date <= d.today);
+  const prev = d.visits.filter((v) => keep.has(v.customerId) && v.date >= prevFrom && v.date < from);
+  const sum = (vs: VisitRow[]) => r2(vs.reduce((a, v) => a + v.amount, 0));
+  const perCust = (vs: VisitRow[]) => { const m = new Map<string, { spend: number; visits: number }>(); for (const v of vs) { const x = m.get(v.customerId) ?? { spend: 0, visits: 0 }; x.spend += v.amount; x.visits++; m.set(v.customerId, x); } return m; };
+  const pc = perCust(cur); const pp = perCust(prev);
+  const revenue = sum(cur); const prevRevenue = sum(prev);
+  const ranked = [...pc.entries()].sort((a, b) => b[1].spend - a[1].spend);
+  const n = ranked.length;
+  const shareOfTop = (pct: number) => { const k = Math.max(1, Math.ceil(n * pct)); return revenue ? Math.round((ranked.slice(0, k).reduce((a, [, x]) => a + x.spend, 0) / revenue) * 100) : 0; };
+  const pareto: { customersPct: number; revenuePct: number }[] = [{ customersPct: 0, revenuePct: 0 }];
+  let acc = 0;
+  ranked.forEach(([, x], i) => { acc += x.spend; const cp = Math.round(((i + 1) / n) * 100); if (cp % 5 === 0 || i === n - 1) pareto.push({ customersPct: cp, revenuePct: revenue ? Math.round((acc / revenue) * 1000) / 10 : 0 }); });
+  const histogram = SPEND_BUCKETS.map(([lo, hi, label]) => { const xs = ranked.filter(([, x]) => x.spend >= lo && (hi === null || x.spend < hi)); return { label, customers: xs.length, revenue: r2(xs.reduce((a, [, x]) => a + x.spend, 0)) }; });
+  const groupBy2 = (key: (p: Profile) => string | null) => {
+    const m = new Map<string, { customers: number; revenue: number; visits: number }>();
+    for (const [id, x] of pc) { const k = key(byId.get(id)!) ?? '—'; const g = m.get(k) ?? { customers: 0, revenue: 0, visits: 0 }; g.customers++; g.revenue += x.spend; g.visits += x.visits; m.set(k, g); }
+    return [...m.entries()].map(([name, g]) => ({ name, customers: g.customers, revenue: r2(g.revenue), avgPerCustomer: r2(g.revenue / g.customers), avgTicket: r2(g.revenue / g.visits), share: revenue ? Math.round((g.revenue / revenue) * 100) : 0 })).sort((a, b) => b.revenue - a.revenue);
+  };
+  const catMap = new Map<string, { visits: number; revenue: number }>();
+  for (const v of cur) for (const c of v.categories) { const x = catMap.get(c) ?? { visits: 0, revenue: 0 }; x.visits++; x.revenue += v.amount; catMap.set(c, x); }
+  const categories = [...catMap.entries()].map(([name, x]) => ({ name, visitsPct: cur.length ? Math.round((x.visits / cur.length) * 100) : 0, revenueWith: r2(x.revenue), avgTicketWith: r2(x.revenue / x.visits) })).sort((a, b) => b.revenueWith - a.revenueWith);
+  // Business weekday (Mon=0) × local hour, hours ordered from the start of the business day.
+  const hours = Array.from({ length: 24 }, (_, i) => (d.dayStartHour + i) % 24);
+  const heat = Array.from({ length: 7 }, () => hours.map(() => 0));
+  for (const v of cur) { const wd = DateTime.fromISO(v.date).weekday - 1; const h = DateTime.fromISO(v.occurredAt, { zone: d.tz }).hour; heat[wd][hours.indexOf(h)] += v.amount; }
+  const step = d.days > 120 ? 7 : 1;
+  const series: { date: string; revenue: number; visits: number; customers: number }[] = [];
+  for (let s = DateTime.fromISO(from); s.toISODate()! <= d.today; s = s.plus({ days: step })) {
+    const a = s.toISODate()!; const b = s.plus({ days: step - 1 }).toISODate()!;
+    const vs = cur.filter((v) => v.date >= a && v.date <= b);
+    series.push({ date: a, revenue: sum(vs), visits: vs.length, customers: new Set(vs.map((v) => v.customerId)).size });
+  }
+  const movers = [...new Set([...pc.keys(), ...pp.keys()])].map((id) => ({ id, now: r2(pc.get(id)?.spend ?? 0), before: r2(pp.get(id)?.spend ?? 0) }))
+    .map((x) => ({ ...x, delta: r2(x.now - x.before), name: byId.get(x.id)?.name ?? 'Guest', tier: byId.get(x.id)?.tier ?? null }));
+  const card = (id: string) => { const p = byId.get(id)!; const x = pc.get(id)!; return { id, name: p.name, tier: p.tier, segment: p.segment, tags: p.tags, visits: x.visits, spend: r2(x.spend), avgTicket: r2(x.spend / x.visits), share: revenue ? Math.round((x.spend / revenue) * 1000) / 10 : 0, before: r2(pp.get(id)?.spend ?? 0), lifetime: p.stats.spend, lastVisit: p.stats.lastVisit }; };
+  return {
+    from, to: d.today, days: d.days, prevFrom,
+    kpis: {
+      revenue, prevRevenue, customers: n, prevCustomers: pp.size, visits: cur.length, prevVisits: prev.length,
+      avgPerCustomer: n ? r2(revenue / n) : 0, avgTicket: cur.length ? r2(revenue / cur.length) : 0, prevAvgTicket: prev.length ? r2(prevRevenue / prev.length) : 0,
+      visitsPerCustomer: n ? r2(cur.length / n) : 0, top10Share: shareOfTop(0.1), top20Share: shareOfTop(0.2),
+      retained: [...pc.keys()].filter((id) => pp.has(id)).length, lost: [...pp.keys()].filter((id) => !pc.has(id)).length, gained: [...pc.keys()].filter((id) => !pp.has(id)).length,
+    },
+    pareto, histogram, byTier: groupBy2((p) => p.tier), bySegment: groupBy2((p) => SEGMENTS[p.segment].label), categories,
+    heat: { hours, rows: heat.map((r) => r.map(r2)), max: Math.max(0, ...heat.flat()) }, series,
+    growers: movers.filter((x) => x.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, 6),
+    decliners: movers.filter((x) => x.delta < 0 && x.before > 0).sort((a, b) => a.delta - b.delta).slice(0, 6),
+    scatter: ranked.slice(0, 400).map(([id, x]) => ({ id, name: byId.get(id)!.name, tier: byId.get(id)!.tier, visits: x.visits, avgTicket: r2(x.spend / x.visits), spend: r2(x.spend) })),
+    leaderboard: ranked.slice(0, 25).map(([id]) => card(id)),
+  };
+}

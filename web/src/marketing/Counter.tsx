@@ -62,7 +62,7 @@ export default function Counter() {
         {done.rewards.length > 0 && <div className="reward-ready"><b>🎁 Reward available</b><div className="row" style={{ justifyContent: 'center' }}>{done.rewards.map((r) => <button key={r.key} className="btn" onClick={() => redeem(r)}>Redeem {r.name}</button>)}</div></div>}
         {err && <div className="error">{err}</div>}
         <div className="row" style={{ justifyContent: 'center', marginTop: 14 }}>
-          <Link className="btn" to={`/admin/marketing/guests/${done.customerId}`}>Open profile</Link>
+          <Link className="btn" to={`/crm/customers/${done.customerId}`}>Open profile</Link>
           <button className="btn primary" onClick={reset} autoFocus>Next guest</button>
         </div>
       </div>

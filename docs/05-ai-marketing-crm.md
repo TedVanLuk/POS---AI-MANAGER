@@ -39,7 +39,15 @@ GoHighLevel's business model (agency → white-label SaaS → client sub-account
 - **Campaign lift against a holdout.** A deterministic hash keeps a percentage of the eligible audience (default 10%) un-messaged. After the attribution window (default 14 days) the system compares return rate and ₱ per guest, then reports lift in percentage points, incremental revenue, cost and ROI. A one-sided two-proportion z-test labels the result **Proven** (≈95%), **Likely** (≈80%), **Unclear**, or **No lift**, and groups under 5 are "too small to measure". The owner never sees a vanity "34% came back" without the comparison.
 - **Identified-revenue share**: guest revenue as a share of all closed order slips. This shows how much of the business the CRM can actually see.
 
-## 4. Architecture
+## 4. A separate app
+
+The CRM is its own product, separate from HR and from the POS. It lives at `/crm` with its own sign-in, menu, customer search and gold-on-black "data board" theme (`web/src/crm/crm.css`). The HR app only links to it from the profile menu. `VITE_APP=crm` builds the CRM on its own (`npm run build:demo-crm` → `web/dist-demo-crm/ai-marketing-crm.html`). The backend stays one API with the same tenants and users, so a venue signs in once with the same account.
+
+Screens: **Command center**, **Customer database**, **Spending performance**, customer profile (with spending per visit), Tonight & tables, Counter check-in, Campaigns, Automations, Settings.
+
+**Spending performance** (`GET /api/crm/spending?days=30|90|180|365&tier=&segment=`, pure `spendingPerformance()` in `core.ts`): revenue, customers, spend per customer, average ticket and change vs the previous period; customers kept, lost and new; top-10% / top-20% revenue share with a Pareto curve; customers per spend band; revenue by tier and segment; category mix with the average ticket on visits that included it; business-night × hour heat map; frequency × ticket scatter; biggest growers and decliners; top-25 leaderboard.
+
+## 5. Architecture
 
 Same pattern as payroll: a **pure engine** plus thin services.
 
@@ -69,12 +77,12 @@ web/src/demo/crm.ts                same API in the browser for the no-server dem
 
 **Safety defaults:** the SMS provider defaults to `log`; quiet hours are 21:00–09:00 for automations and campaigns (an admin can override per send); there is at most one automated message per guest per day; "reward unlocked" fires only right after a visit, so turning it on does not text the whole back catalogue; a campaign is claimed atomically before sending, so a double-click cannot send twice; and repeated POS receipts are ignored.
 
-## 5. API summary
+## 6. API summary
 
 | Area | Endpoints |
 |---|---|
 | Setup | `GET/PUT /api/crm/settings`, `POST /api/crm/playbooks/:key/apply` |
-| Insight | `GET /api/crm/overview`, `GET /api/crm/customers?q&segment&tag&tier&sort`, `GET /api/crm/customers/:id`, `GET /api/crm/attribution` |
+| Insight | `GET /api/crm/overview`, `GET /api/crm/spending?days&tier&segment`, `GET /api/crm/customers?q&segment&tag&tier&sort&limit`, `GET /api/crm/customers/:id`, `GET /api/crm/attribution` |
 | Counter | `GET /api/crm/lookup?phone=`, `POST /api/crm/checkin`, `POST /api/crm/customers/:id/redeem` |
 | Guests | `POST /api/crm/customers`, `PATCH /api/crm/customers/:id`, `POST …/consent`, `POST …/visits`, `POST …/points` (admin, reason), `GET …/export` (admin), `POST …/erase` (admin, reason) |
 | Tables | `GET/POST /api/crm/reservations`, `PATCH /api/crm/reservations/:id` (closing a table with the bill records the visit and points once) |
@@ -84,7 +92,7 @@ web/src/demo/crm.ts                same API in the browser for the no-server dem
 
 Environment: `SMS_PROVIDER=log|semaphore`, `SEMAPHORE_API_KEY`, `CRM_INBOUND_SECRET`, `CRM_AUTOMATIONS=on|off`.
 
-## 6. Pilot plan: one architecture, two workflows
+## 7. Pilot plan: one architecture, two workflows
 
 | | Pilot A — Nightclub VIP (high-touch) | Pilot B — Café / shisha lounge (high-frequency) |
 |---|---|---|
@@ -96,7 +104,7 @@ Environment: `SMS_PROVIDER=log|semaphore`, `SEMAPHORE_API_KEY`, `CRM_INBOUND_SEC
 
 Run both on the same deployment and code path. If both pilots meet their metrics, one CRM architecture serves both high-touch hospitality and high-frequency retail.
 
-## 7. Open validation questions (before scaling)
+## 8. Open validation questions (before scaling)
 
 1. **POS:** will StoreHub / UTAK / Mosaic push bills (webhook or export), or do we need a middleware or CSV routine per venue?
 2. **Sender ID:** registration lead time and Letter of Authorization per network for each venue's brand; Viber Business account cost vs SMS for the target guests.
@@ -104,7 +112,7 @@ Run both on the same deployment and code path. If both pilots meet their metrics
 4. **Staff:** time per check-in at the counter at peak hours (target < 10 s), and whether door staff use the recognition line.
 5. **Holdout acceptance:** will owners accept not messaging 10% of guests? Without it, lift cannot be proven.
 
-## 8. Roadmap
+## 9. Roadmap
 
 1. Viber Business Messages and email adapters; delivery receipts.
 2. Guest-facing pages: a self-enrolment QR code at tables (consent captured by the guest), points balance by SMS keyword.

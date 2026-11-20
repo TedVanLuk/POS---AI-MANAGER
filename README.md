@@ -3,7 +3,7 @@
 A multi-tenant management platform for Philippine (and international) hospitality businesses, with two main layers:
 
 - **AI Manager HR**: people, time, pay and performance
-- **AI Marketing**: a guest CRM with loyalty, VIP management, campaigns and automations, and measured retention
+- **AI Marketing CRM**: a separate app at `/crm` with its own gold-on-black design, built around the venue's customers: customer database, spending performance, loyalty, VIP tables, campaigns, automations and measured retention
 
 The HR layer covers:
 
@@ -20,7 +20,7 @@ The HR layer covers:
 | **2. Automated payroll** | Payroll is computed from punches: OT, night diff, rest day and holiday premiums, late/undertime/absence, SSS/PhilHealth/Pag-IBIG, BIR withholding tax, 13th-month accrual. Each component can be switched off per tenant or per payslip line. Every manual edit records **who, when, old → new, and why**. The run follows draft → review → approved (locked) → paid. |
 | **3. Penalties** | Rules (late tiers, habitual tardiness, AWOL, missing time-out) and manual disciplinary deductions go through pending → approved / waived. Approved penalties are deducted automatically. |
 | **4. Efficiency, notes & stats** | Order slips (OS) per server: throughput, service time, voids, sales/hour, and **missing serial detection**. Management notes (commendation, coaching, warning, incident). **Fighter cards** (OVR + PUN/ATT/SPD/HUS/SAL/DIS/REP radar). |
-| **5. AI Marketing (CRM)** | Guest profiles with spend, visit rhythm, preferences, **auto-tags** and **tiers** (SevenRooms-style). **Counter check-in** by mobile number with points and rewards (Square-style). **Tonight & tables**: VIP reservations vs minimum consumable, arrival recognition, promoter/VIP-host attribution. **Campaigns** with a **holdout group** and proven lift / incremental ₱ / ROI. **Automations** and one-click **playbooks** (nightclub VIP, café loyalty, shisha lounge; GoHighLevel-style). Data Privacy Act tooling: recorded opt-in, STOP handling, export and erasure. See [docs/05](docs/05-ai-marketing-crm.md). |
+| **5. AI Marketing CRM** (`/crm`, separate app) | **Command center** (revenue by tier, daily revenue, night × hour heat map, segments, health gauges, top and slipping customers). **Customer database** with filters, sortable columns and CSV copy. **Spending performance**: concentration (Pareto), spend bands, tiers, segments, categories, frequency × ticket, growers/decliners, leaderboard. Guest profiles with spend, visit rhythm, preferences, **auto-tags** and **tiers** (SevenRooms-style). **Counter check-in** by mobile number with points and rewards (Square-style). **Tonight & tables**: VIP reservations vs minimum consumable, arrival recognition, promoter/VIP-host attribution. **Campaigns** with a **holdout group** and proven lift / incremental ₱ / ROI. **Automations** and one-click **playbooks** (nightclub VIP, café loyalty, shisha lounge; GoHighLevel-style). Data Privacy Act tooling: recorded opt-in, STOP handling, export and erasure. See [docs/05](docs/05-ai-marketing-crm.md). |
 | **Access** | **Admin/owner/manager** web app with dashboard, statistics and AI chat. **Employee**: kiosk punch, plus `/me` with own week, lates, approved payslips and card. |
 
 Docs:
@@ -54,6 +54,10 @@ npm run db:seed              # runs migrations, then seeds "Mega Dance Center" (
 # 4. Develop
 npm run dev                  # API on :4000, web on :5173 (proxied)
 # or production-style: npm run build && npm start   → everything on :4000
+# HR at /admin, AI Marketing CRM at /crm
+
+# Self-contained demos (no server): web/dist-demo/ai-manager-hr.html and web/dist-demo-crm/ai-marketing-crm.html
+npm run build:demo -w web && npm run build:demo-crm -w web
 ```
 
 Demo logins (from the seed):
@@ -84,6 +88,7 @@ server/src/
 web/src/
   kiosk/        Kiosk.tsx, drivers/ (secugen, android, simulator), queue.ts
   admin/        Dashboard, Attendance, Employees, Payroll, Penalties, Efficiency, Performance, AI, Settings
-  marketing/    AI Marketing: dashboard, guests, guest profile, counter, tonight & tables, campaigns, automations, settings
+  crm/          AI Marketing CRM app: CrmApp (shell, login), Overview, Customers, Spending, charts, crm.css (own theme)
+  marketing/    CRM screens reused by crm/: guest profile, counter, tonight & tables, campaigns, automations, settings
   me/           employee self-service
 ```

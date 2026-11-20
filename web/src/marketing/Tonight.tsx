@@ -66,7 +66,7 @@ export default function Tonight() {
             <div className="res-main">
               <div className="row" style={{ gap: '.5rem' }}>
                 <Avatar name={r.guest.name} />
-                <Link to={`/admin/marketing/guests/${r.customerId}`}><b>{r.guest.name}</b></Link>
+                <Link to={`/crm/customers/${r.customerId}`}><b>{r.guest.name}</b></Link>
                 <TierBadge tier={r.guest.tier} /><Tags tags={r.guest.tags.filter((t) => ['VIP', 'Big spender', 'Celebrity', 'No-show risk', 'Birthday soon'].includes(t))} />
               </div>
               <div className="recog small"><Icon name="spark" />{r.recognition}</div>
@@ -91,7 +91,7 @@ export default function Tonight() {
           <div className="card-head"><h2>Who brings the guests</h2><div className="spacer" /><span className="small">{attr.data.from} → {attr.data.to} · feeds table commissions in Payroll</span></div>
           <table><thead><tr><th>Name</th><th>Role</th><th className="num">Bookings</th><th className="num">Guests</th><th className="num">Show-up</th><th className="num">New guests</th><th className="num">Table spend</th><th className="num">vs minimum</th></tr></thead>
             <tbody>{attr.data.people.map((x) => (
-              <tr key={`${x.role}${x.employeeId}`}><td><Link to={`/admin/employees/${x.employeeId}`}>{x.name}</Link></td><td>{x.role === 'host' ? 'VIP host' : 'Promoter'}</td><td className="num">{x.bookings}</td><td className="num">{x.guests}</td>
+              <tr key={`${x.role}${x.employeeId}`}><td><b>{x.name}</b></td><td>{x.role === 'host' ? 'VIP host' : 'Promoter'}</td><td className="num">{x.bookings}</td><td className="num">{x.guests}</td>
                 <td className="num">{x.bookings ? Math.round((x.arrived / x.bookings) * 100) : 0}%</td><td className="num">{x.role === 'promoter' ? x.newGuests : '—'}</td><td className="num">{pesoShort(x.spend)}</td><td className="num">{x.minSpend ? `${Math.round((x.spend / x.minSpend) * 100)}%` : '—'}</td></tr>
             ))}</tbody></table>
         </div>

@@ -4,7 +4,7 @@
  */
 import { DateTime } from 'luxon';
 import {
-  buildProfiles, businessDate, campaignResult, ERASED_FIELDS, exportCustomer, overview, planAutomations, planMessage, recognition, todayFor,
+  buildProfiles, businessDate, campaignResult, ERASED_FIELDS, exportCustomer, overview, planAutomations, planMessage, recognition, spendingPerformance, todayFor,
   type CampaignRow, type CustomerRow, type MessageRow, type PlannedMessage, type PointsRow, type Profile, type ReservationRow, type ReservationStatus, type VisitRow,
 } from '../../../server/src/crm/core';
 import {
@@ -139,6 +139,12 @@ export function registerCrm(d: Deps) {
 
   on('GET', '/api/crm/overview', (c) => { d.requireUser(c, STAFF); return overview({ profiles: profiles(), visits: S().visits, messages: S().messages, campaigns: S().campaigns, settings: settings(), today: today() }); });
 
+  on('GET', '/api/crm/spending', (c, _p, q) => {
+    d.requireUser(c, STAFF);
+    const days = Math.min(730, Math.max(7, Number(q.get('days') ?? 90) || 90));
+    return spendingPerformance({ profiles: profiles(), visits: S().visits, today: today(), tz: d.tz, dayStartHour: settings().dayStartHour, days, segment: q.get('segment') || null, tier: q.get('tier') || null });
+  });
+
   // guests
   on('GET', '/api/crm/customers', (c, _p, q) => {
     d.requireUser(c, STAFF);
@@ -148,7 +154,7 @@ export function registerCrm(d: Deps) {
     const list = all.filter((p) => !p.erasedAt && (!s || p.name.toLowerCase().includes(s) || (!!digits && digits.length >= 3 && (p.phone ?? '').includes(digits.replace(/^0/, ''))) || (p.email ?? '').toLowerCase().includes(s))
       && (!seg || p.segment === seg) && (!tag || p.tags.includes(tag)) && (!tier || p.tier === tier))
       .sort((a, b) => by === 'name' ? a.name.localeCompare(b.name) : by === 'recent' ? (b.stats.lastVisit ?? '').localeCompare(a.stats.lastVisit ?? '') : by === 'visits' ? b.stats.visits - a.stats.visits : by === 'points' ? b.pointsBalance - a.pointsBalance : b.stats.spend365 - a.stats.spend365);
-    return { total: list.length, tags: [...new Set(all.flatMap((p) => p.tags))].sort(), customers: list.slice(0, 500).map(summary) };
+    return { total: list.length, tags: [...new Set(all.flatMap((p) => p.tags))].sort(), customers: list.slice(0, Math.min(10_000, Number(q.get('limit')) || 500)).map(summary) };
   });
   on('POST', '/api/crm/customers', (c, _p, _q, b) => {
     d.requireUser(c, STAFF);

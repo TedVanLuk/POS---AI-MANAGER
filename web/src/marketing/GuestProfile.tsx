@@ -5,6 +5,7 @@ import { isAdmin, useAuth } from '../auth';
 import { useApi } from '../hooks';
 import { Icon, Portrait } from '../components/Icon';
 import { ConfirmDialog, Modal, ReasonDialog } from '../components/Modal';
+import { Bars, fmtK } from '../crm/charts';
 import { ago, pesoShort, SEGMENT_LABEL, SegmentBadge, Tags, TierBadge, type Consent, type Reward, type Segment } from './shared';
 
 interface Prefs { drinks?: string; food?: string; seating?: string; allergies?: string; music?: string; notes?: string }
@@ -49,20 +50,18 @@ export default function GuestProfile() {
 
   const exportData = async () => {
     const data = await api.get<unknown>(`/api/crm/customers/${p.id}/export`);
-    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-    const a = document.createElement('a'); a.href = url; a.download = `guest-data-${p.id.slice(0, 8)}.json`; a.click(); URL.revokeObjectURL(url);
-    flash('Data export downloaded');
+    try { await navigator.clipboard.writeText(JSON.stringify(data, null, 2)); flash('Guest data copied as JSON — paste it into an email or file for the guest'); } catch { flash('The browser blocked copying'); }
   };
 
   if (p.erasedAt) return (
     <div className="card"><h1>Erased guest</h1><div className="muted">Personal data was erased on {fmtDateTime(p.erasedAt)} at the guest's request. {s.visits} anonymous visits ({peso(s.spend)}) are kept for the books.</div>
-      <button className="btn" style={{ marginTop: 12 }} onClick={() => nav('/admin/marketing/guests')}>Back to guests</button></div>
+      <button className="btn" style={{ marginTop: 12 }} onClick={() => nav('/crm/customers')}>Back to guests</button></div>
   );
 
   return (
     <>
       <div className="page-head">
-        <Link to="/admin/marketing/guests" className="icon-btn" aria-label="Back to guests"><Icon name="left" /></Link>
+        <Link to="/crm/customers" className="icon-btn" aria-label="Back to guests"><Icon name="left" /></Link>
         <h1>{p.name}</h1><TierBadge tier={p.tier} /><SegmentBadge s={p.segment} />
         <div className="spacer" />
         <button className="btn" onClick={() => setEdit(true)}>Edit profile</button>
@@ -79,7 +78,7 @@ export default function GuestProfile() {
             {p.email && <span><Icon name="mail" />{p.email}</span>}
             {p.birthday && <span>🎂 {new Date(`2000-${p.birthday}T12:00:00`).toLocaleDateString('en-PH', { month: 'long', day: 'numeric' })}{p.daysToBirthday !== null && p.daysToBirthday <= 30 ? ` · in ${p.daysToBirthday} days` : ''}</span>}
             <span>Since {new Date(p.createdAt).toLocaleDateString('en-PH', { month: 'short', year: 'numeric' })} · via {p.source}</span>
-            {d.data.referredBy && <span>Brought by <Link to={`/admin/employees/${d.data.referredBy.id}`}>{d.data.referredBy.name}</Link></span>}
+            {d.data.referredBy && <span>Brought by <b>{d.data.referredBy.name}</b></span>}
           </div>
         </div>
         <div className="pref-box">
@@ -96,6 +95,13 @@ export default function GuestProfile() {
         <div className="tile"><div className="v">{ago(s.daysSinceLastVisit)}</div><div className="k">Last visit{s.overdue ? ' · overdue vs usual rhythm' : ''}</div></div>
         <div className="tile"><div className="v">{p.bookings}</div><div className="k">Reservations · {p.noShows} no-show{p.noShows === 1 ? '' : 's'}</div></div>
       </div>
+
+      {d.data.visits.length > 1 && (
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="card-head"><h2>Spending per visit</h2><div className="spacer" /><span className="small">last {Math.min(40, d.data.visits.length)} visits · lifetime {fmtK(s.spend)}</span></div>
+          <Bars label="Hover a visit" height={150} data={[...d.data.visits].slice(0, 40).reverse().map((v) => ({ key: v.id, label: new Date(`${v.date}T12:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), value: v.amount }))} />
+        </div>
+      )}
 
       <div className="mk-grid" style={{ marginTop: 14 }}>
         <div className="card">
@@ -169,7 +175,7 @@ export default function GuestProfile() {
             <h2>Data subject rights</h2>
             <div className="small muted" style={{ marginBottom: 10 }}>Guests can ask what you hold about them (access), take a copy (portability), or ask you to delete it (erasure). Answer without undue delay.</div>
             {isAdmin(me?.role) ? <div className="row">
-              <button className="btn" onClick={exportData}><Icon name="download" /> Export guest data (JSON)</button>
+              <button className="btn" onClick={exportData}><Icon name="download" /> Copy guest data (JSON)</button>
               <button className="btn danger" onClick={() => setErase(true)}>Erase personal data…</button>
             </div> : <div className="muted small">Ask an owner/admin to export or erase.</div>}
           </div>

@@ -47,8 +47,8 @@ export default function Guests() {
           <thead><tr><th>Guest</th><th>Segment</th><th>Tags</th><th className="num">Visits</th><th className="num">12-mo spend</th><th className="num">Avg</th><th>Last visit</th><th className="num">Points</th><th>Consent</th></tr></thead>
           <tbody>
             {list.data?.customers.map((g) => (
-              <tr key={g.id} className="click" onClick={() => nav(`/admin/marketing/guests/${g.id}`)}>
-                <td><div className="row" style={{ gap: '.55rem', flexWrap: 'nowrap' }}><Avatar name={g.name} /><div><Link to={`/admin/marketing/guests/${g.id}`} onClick={(e) => e.stopPropagation()}><b>{g.name}</b></Link> <TierBadge tier={g.tier} /><div className="small muted">{g.phoneDisplay}{g.daysToBirthday !== null && g.daysToBirthday <= 14 ? ` · 🎂 in ${g.daysToBirthday}d` : ''}</div></div></div></td>
+              <tr key={g.id} className="click" onClick={() => nav(`/crm/customers/${g.id}`)}>
+                <td><div className="row" style={{ gap: '.55rem', flexWrap: 'nowrap' }}><Avatar name={g.name} /><div><Link to={`/crm/customers/${g.id}`} onClick={(e) => e.stopPropagation()}><b>{g.name}</b></Link> <TierBadge tier={g.tier} /><div className="small muted">{g.phoneDisplay}{g.daysToBirthday !== null && g.daysToBirthday <= 14 ? ` · 🎂 in ${g.daysToBirthday}d` : ''}</div></div></div></td>
                 <td><SegmentBadge s={g.segment} />{g.overdue && <span className="badge warn" title="Twice their usual gap since the last visit">overdue</span>}</td>
                 <td><Tags tags={g.tags} max={3} /></td>
                 <td className="num">{g.visits}</td>
@@ -64,7 +64,7 @@ export default function Guests() {
         </table>
       </div>
       {list.data && list.data.total > 500 && <div className="small muted" style={{ marginTop: 8 }}>Showing the first 500 — narrow the search to see others.</div>}
-      {adding && <AddGuest onClose={() => setAdding(false)} onDone={(id) => nav(`/admin/marketing/guests/${id}`)} />}
+      {adding && <AddGuest onClose={() => setAdding(false)} onDone={(id) => nav(`/crm/customers/${id}`)} />}
     </>
   );
 }

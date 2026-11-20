@@ -6,7 +6,7 @@ import { ConfirmDialog } from '../components/Modal';
 import { resetDemo } from './backend';
 
 /** Thin strip on top of the demo: jump between the three access levels and reset sample data. */
-export function DemoBar() {
+export function DemoBar({ crm }: { crm?: boolean }) {
   const { login, logout } = useAuth();
   const nav = useNavigate();
   const [resetting, setResetting] = useState(false);
@@ -16,6 +16,21 @@ export function DemoBar() {
     await login(who === 'admin' ? 'admin@demo.ph' : 'juan@demo.ph', who === 'admin' ? 'Admin123!' : 'Employee123!');
     nav(who === 'admin' ? '/admin' : '/me');
   };
+  if (crm) return (
+    <div className="demo-bar">
+      <span className="demo-tag">Demo</span>
+      <span className="demo-text">Sample venue customers, saved only in this browser. No real SMS are sent.</span>
+      <div className="demo-actions">
+        <button onClick={async () => { logout(); await login('admin@demo.ph', 'Admin123!'); nav('/crm'); }}>Owner</button>
+        <button onClick={async () => { logout(); await login('manager@demo.ph', 'Manager123!'); nav('/crm'); }}>Manager</button>
+        <button onClick={() => setResetting(true)}>Reset data</button>
+      </div>
+      {resetting && (
+        <ConfirmDialog title="Reset demo data" danger confirmLabel="Reset" message="All changes you made in this demo (customers, visits, points, campaigns) are replaced with fresh sample data."
+          onClose={() => setResetting(false)} onConfirm={async () => { resetDemo(); logout(); nav('/crm/login'); }} />
+      )}
+    </div>
+  );
   return (
     <div className="demo-bar">
       <span className="demo-tag">Demo</span>

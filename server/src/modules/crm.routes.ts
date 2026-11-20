@@ -9,7 +9,7 @@ import { badRequest, conflict, forbidden, HttpError, notFound } from '../lib/err
 import { isoDate, parse, reason, uuid } from '../lib/validate.js';
 import { ADMIN_ROLES, requireDevice, requireUser, STAFF_ROLES, userOf, type Principal } from '../plugins/auth.js';
 import { TABLES } from '../policy/handbook.js';
-import { campaignResult, ERASED_FIELDS, exportCustomer, overview, planMessage, recognition, type Profile } from '../crm/core.js';
+import { campaignResult, ERASED_FIELDS, exportCustomer, overview, planMessage, recognition, spendingPerformance, type Profile } from '../crm/core.js';
 import { CHANNELS, inHoldout, inQuietHours, isOptOutReply, SEGMENTS, selectAudience, smsParts, TRIGGERS, type AudienceFilter, type Segment } from '../crm/engine.js';
 import { normalizePhone } from '../crm/phone.js';
 import { applyPlaybook, PLAYBOOKS } from '../crm/playbooks.js';
@@ -119,9 +119,16 @@ export default async function crmRoutes(app: FastifyInstance) {
     return overview({ profiles: d.profiles, visits: d.rows.visits, messages: d.rows.messages, campaigns: d.rows.campaigns, settings: d.settings, today: d.today, venueRevenue: await venueRevenue(p.tenantId, d.tz, from, d.today) });
   });
 
+  /** Customer spending performance for a period (30/90/180/365 days), optionally for one segment or tier. */
+  app.get('/api/crm/spending', staff, async (req) => {
+    const q = parse(z.object({ days: z.coerce.number().int().min(7).max(730).default(90), segment: z.string().max(40).optional(), tier: z.string().max(40).optional() }), req.query);
+    const d = await loadProfiles(userOf(req).tenantId);
+    return spendingPerformance({ profiles: d.profiles, visits: d.rows.visits, today: d.today, tz: d.tz, dayStartHour: d.settings.dayStartHour, days: q.days, segment: q.segment || null, tier: q.tier || null });
+  });
+
   // ------------------------------------------------------------ guests
   app.get('/api/crm/customers', staff, async (req) => {
-    const q = parse(z.object({ q: z.string().max(80).optional(), segment: z.string().optional(), tag: z.string().optional(), tier: z.string().optional(), sort: z.enum(['spend', 'recent', 'name', 'visits', 'points']).optional() }), req.query);
+    const q = parse(z.object({ q: z.string().max(80).optional(), segment: z.string().optional(), tag: z.string().optional(), tier: z.string().optional(), sort: z.enum(['spend', 'recent', 'name', 'visits', 'points']).optional(), limit: z.coerce.number().int().min(1).max(10_000).optional() }), req.query);
     const d = await loadProfiles(userOf(req).tenantId);
     const s = q.q?.trim().toLowerCase();
     const digits = s?.replace(/\D/g, '');
@@ -130,7 +137,7 @@ export default async function crmRoutes(app: FastifyInstance) {
       && (!q.segment || p.segment === q.segment) && (!q.tag || p.tags.includes(q.tag)) && (!q.tier || p.tier === q.tier));
     const by = q.sort ?? 'spend';
     list = list.sort((a, b) => by === 'name' ? a.name.localeCompare(b.name) : by === 'recent' ? (b.stats.lastVisit ?? '').localeCompare(a.stats.lastVisit ?? '') : by === 'visits' ? b.stats.visits - a.stats.visits : by === 'points' ? b.pointsBalance - a.pointsBalance : b.stats.spend365 - a.stats.spend365);
-    return { total: list.length, tags: [...new Set(d.profiles.flatMap((p) => p.tags))].sort(), customers: list.slice(0, 500).map(summary) };
+    return { total: list.length, tags: [...new Set(d.profiles.flatMap((p) => p.tags))].sort(), customers: list.slice(0, q.limit ?? 500).map(summary) };
   });
 
   app.post('/api/crm/customers', staff, async (req) => {

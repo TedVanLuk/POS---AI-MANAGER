@@ -192,3 +192,22 @@ describe('playbooks and core', () => {
     expect(businessDate('2026-11-20T18:30:00Z', 'Asia/Manila', 6)).toBe('2026-11-20'); // 2:30 AM Manila → previous night
   });
 });
+
+describe('spending performance', () => {
+  it('computes concentration, distribution, heat and movers', async () => {
+    const { spendingPerformance } = await import('./core.js');
+    const cust = (id: string): CustomerRow => ({ id, firstName: id, lastName: '', phone: null, email: null, birthday: null, source: 'pos', referredByEmployeeId: null, tags: [], preferences: {}, consent: {}, erasedAt: null, createdAt: T });
+    const v = (customerId: string, date: string, amount: number, hourUtc = 15): VisitRow => ({ id: `${customerId}${date}`, customerId, occurredAt: `${date}T${String(hourUtc).padStart(2, '0')}:00:00Z`, date, amount, items: 1, categories: ['bottle'], source: 'pos', externalRef: null, reservationId: null, serverEmployeeId: null, pointsEarned: 0 });
+    const customers = ['a', 'b', 'c', 'd', 'e'].map(cust);
+    const visits = [v('a', '2026-11-10', 90000), v('b', '2026-11-12', 4000), v('c', '2026-11-13', 3000), v('d', '2026-11-14', 2000), v('e', '2026-11-15', 1000), v('b', '2026-10-01', 20000)];
+    const profiles = buildProfiles({ customers, visits, points: [], reservations: [], settings: DEFAULT_CRM, today: T });
+    const s = spendingPerformance({ profiles, visits, today: T, tz: 'Asia/Manila', dayStartHour: 6, days: 30 });
+    expect([s.kpis.revenue, s.kpis.customers, s.kpis.top20Share, s.kpis.avgTicket]).toEqual([100000, 5, 90, 20000]);
+    expect(s.histogram.find((h) => h.label === '₱50k–100k')!.customers).toBe(1);
+    expect(s.pareto.at(-1)).toEqual({ customersPct: 100, revenuePct: 100 });
+    expect(s.decliners[0]).toMatchObject({ id: 'b', before: 20000, now: 4000 });
+    // 15:00 UTC = 23:00 Manila; 2026-11-10 is a Tuesday → row 1, hour 23 → column 17 when the day starts at 06:00
+    expect(s.heat.rows[1][s.heat.hours.indexOf(23)]).toBe(90000);
+    expect(s.series).toHaveLength(30);
+  });
+});

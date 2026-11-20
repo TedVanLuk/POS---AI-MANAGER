@@ -21,14 +21,7 @@ import CompanyPolicy from './admin/CompanyPolicy';
 import JobDescription from './admin/JobDescription';
 import Management from './admin/Management';
 import SevenStepReview from './admin/SevenStepReview';
-import MarketingDashboard from './marketing/MarketingDashboard';
-import Guests from './marketing/Guests';
-import GuestProfile from './marketing/GuestProfile';
-import Counter from './marketing/Counter';
-import Tonight from './marketing/Tonight';
-import Campaigns from './marketing/Campaigns';
-import Automations from './marketing/Automations';
-import MarketingSettings from './marketing/MarketingSettings';
+import CrmApp from './crm/CrmApp';
 import Kiosk from './kiosk/Kiosk';
 import MePage from './me/MePage';
 
@@ -74,16 +67,10 @@ export default function App() {
         <Route path="policy/jobs/:key" element={<JobDescription />} />
         <Route path="management" element={<Management />} />
         <Route path="management/review" element={<SevenStepReview />} />
-        <Route path="marketing" element={<MarketingDashboard />} />
-        <Route path="marketing/guests" element={<Guests />} />
-        <Route path="marketing/guests/:id" element={<GuestProfile />} />
-        <Route path="marketing/counter" element={<Counter />} />
-        <Route path="marketing/tonight" element={<Tonight />} />
-        <Route path="marketing/campaigns" element={<Campaigns />} />
-        <Route path="marketing/automations" element={<Automations />} />
-        <Route path="marketing/settings" element={<MarketingSettings />} />
+        <Route path="marketing/*" element={<Navigate to="/crm" replace />} />
         <Route path="settings" element={<Settings />} />
       </Route>
+      <Route path="/crm/*" element={<CrmApp />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
